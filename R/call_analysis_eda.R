@@ -1,16 +1,78 @@
 library(dplyr)
 library(ggplot2)
 library(tidyr)
+# ************************************
+# ---- read in call analysis data ----
+# ************************************
+# output path to save S3 CSVs to
+out_path <- "D:/cpo/data/call_analysis/aggregate/call_analysis.csv"
+
+# Name of S3 bucket
+bucket_name <- "cpo-call-analysis-output"
+
+# list buckets
+aws.s3::bucketlist()
+
+# check if local file already exists, otherwise hit up S3 bucket for CSVs and bind into large dataset
+if(file.exists(out_path)) {
+
+  message(paste0("Reading data from:\n---> ", out_path))
+
+  call_df <- readr::read_csv(out_path)
+
+} else {
+
+  message(paste0("Data not found at path:\n---> ", out_path))
+
+  # objects in S3 bucket
+  bucket_objs <- aws.s3::get_bucket_df(
+    bucket = bucket_name,
+    region = "us-west-1",
+    max    = Inf
+  )
+
+  # pull in all CSVs and save to local machine
+  call_df <- lapply(1:nrow(bucket_objs), function(i) {
+
+    message(paste0(i, "/", nrow(bucket_objs)))
+
+    tryCatch({
+
+      # read CSVs from S3 bucket
+      aws.s3::get_object(
+        bucket_objs$Key[i],
+        region = "us-west-1",
+        bucket = bucket_name,
+        as     = "text"
+      ) %>%
+        readr::read_csv(show_col_types = FALSE) %>%
+        dplyr::mutate(dplyr::across(dplyr::everything(), as.character))
+
+    },
+    error = function(e) {
+      NULL
+    })
+  }) %>%
+    dplyr::bind_rows()
+
+  message(paste0("Saving data to path:\n---> ", out_path))
+
+  # save
+  readr::write_csv(call_df, out_path)
+
+}
+
+
+# ************************************
+# ---- read in call analysis data ----
+# ************************************
+
+# ************************************
+# ************************************
+# ************************************
 
 # read in call analysis data
-call_analysis_df2 <- readRDS("data/call_analysis2.rds")
-call_analysis_df3 <- readRDS("data/call_analysis3.rds")
-call_analysis_df5 <- readRDS("data/call_analysis5.rds")
-call_analysis_df6 <- readRDS("data/call_analysis6.rds")
-# call_analysis_df <- readRDS("data/call_analysis.rds")
-call_analysis_df <- dplyr::bind_rows(call_analysis_df2, call_analysis_df3, call_analysis_df5, call_analysis_df6)
-
-length(unique(call_analysis_df$analysis_wr_admin_no))
+# call_analysis_df <- readRDS("data/call_analysis2.rds")
 
 # unique WDID/ADMIN pairs
 uids <- dplyr::tibble(unique(call_analysis_df[,c( 'analysis_wdid', 'analysis_wr_admin_no')])) %>%
@@ -32,6 +94,7 @@ wdid_dates %>%
   dplyr::group_by(wdid) %>%
   dplyr::tally() %>%
   dplyr::arrange(-n)
+
 sub_wdids <-
   wdid_dates %>%
   dplyr::tibble() %>%
@@ -40,12 +103,11 @@ year_df <- data.frame(year1 = c("2002", "2018"),
                       year2 = c("2005", "2022"))
 years <- c(2002, 2021)
 call_analysis_df <- lapply(1:nrow(sub_wdids), function(i) {
-# call_analysis_df <- lapply(1:130, function(i) {
-  # call_analysis_df <- lapply(1:130, function(i) {
+
   message(paste0("WDID Call analysis: ", sub_wdids$wdid[i], " - (", i, "/", nrow(sub_wdids), ")"))
 
   year_lst <- lapply(1:length(years), function(x) {
-  # year_lst <- lapply(1:nrow(year_df), function(x) {
+
     # GET request to CDSS API
     tryCatch({
 
@@ -55,11 +117,8 @@ call_analysis_df <- lapply(1:nrow(sub_wdids), function(i) {
       calls <- cdssr::get_call_analysis_wdid(
         wdid       = sub_wdids$wdid[i],
         admin_no   = sub_wdids$admin_number[i],
-        # start_date = paste0(year_df$year1[x], "-04-01"),
-        # end_date   = paste0(year_df$year2[x], "-09-01"),
         start_date = paste0(years[x], "-04-01"),
-        end_date   = paste0(years[x], "-09-01"),
-        api_key    = "O4AbCNRWLVsDkAPK3oDmnztmNPlUJWby"
+        end_date   = paste0(years[x], "-09-01")
       )
 
       calls
@@ -83,7 +142,7 @@ call_analysis_df <- lapply(1:nrow(sub_wdids), function(i) {
 # ***********************
 
 sub_calls <-
-  call_analysis_df %>%
+  call_analysis %>%
   dplyr::tibble() %>%
   dplyr::rename(
     admin_no = analysis_wr_admin_no,
@@ -112,7 +171,7 @@ sub_calls <-
 sub_calls %>%
   dplyr::filter(year == 2002) %>%
   ggplot2::ggplot() +
-  ggplot2::geom_point(ggplot2::aes(x = datetime, y = out_pct, color = admin_date))
+  ggplot2::geom_point(ggplot2::aes(x = datetime, y = out_pct, color = priority_date))
 
 sub_calls %>%
   dplyr::filter(year == 2002) %>%
