@@ -692,22 +692,6 @@ if(file.exists(gnis_path)) {
       realization = "flowline"
     )
 
-    # gnis %>%
-    #   dplyr::mutate(gnis_order = paste0(gnis_id, "_", streamorde)) %>%
-    #   ggplot2::ggplot() +
-    #   ggplot2::geom_sf(ggplot2::aes(color = gnis_order))
-
-    # gnis %>%
-    #   dplyr::filter(streamcalc != 0) %>%
-    #   dplyr::filter(streamorde >= 3) %>%
-    #   dplyr::mutate(gnis_order = paste0(gnis_id, "_", streamorde)) %>%
-    #   # dplyr::group_by(gnis_order)
-    # # dplyr::group_by(levelpathi)
-    #   # dplyr::filter(!gnis_order %in% c(" _4", " _5", " _3")) %>%
-    #   ggplot2::ggplot() +
-    #   ggplot2::geom_sf(ggplot2::aes(color = factor(gnis_order)))
-    #   # ggplot2::geom_sf(ggplot2::aes(color = factor(levelpathi)))
-
     tryCatch({
 
       gnis <-
@@ -716,10 +700,8 @@ if(file.exists(gnis_path)) {
         dplyr::filter(streamorde >= 3) %>%
         dplyr::mutate(dplyr::across(c(-geometry), as.character)) %>%
         dplyr::group_by(gnis_id, gnis_name, streamorde) %>%
-        # dplyr::group_by(gnis_id, gnis_name, streamorde, levelpathi) %>%
         dplyr::summarise() %>%
         dplyr::mutate(
-          # gnis_order = paste0(gnis_id, "_", streamorde),
           gnis_id    = dplyr::case_when(
             gnis_id == " " & gnis_name == " " ~ "no_gnis_id",
             gnis_id == " " & gnis_name != " " ~ gnis_name,
@@ -851,11 +833,9 @@ gnis_ca <- lapply(1:nrow(wr_gnis), function(i) {
     calls <- cdssr::get_call_analysis_wdid(
       wdid       = wr_gnis$wdid[i],
       admin_no   = "99999.00000",
-      # start_date = "2022-12-01",
-      # end_date   = "2023-01-01"
       start_date = "1993-01-01",
       end_date   = "2023-01-01",
-      api_key = "2fx+0sUzKbpOWeqkWzbU4BIIOtpwoVyE"
+      api_key    = "2fx+0sUzKbpOWeqkWzbU4BIIOtpwoVyE"
     ) %>%
       dplyr::mutate(
         district            = wr_gnis$district[i],
