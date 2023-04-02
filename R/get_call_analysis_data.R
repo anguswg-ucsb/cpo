@@ -9,6 +9,7 @@ library(aws.s3)
 
 source("R/utils.R")
 
+# TODO go through and see if all of this stuff is superfluous
 # ***********************
 # ---- Paths to data ----
 # ***********************
@@ -173,19 +174,12 @@ for (i in 1:length(district_split)) {
 
 }
 
-# ****************************************************************
-# ---- run call analysis workflow in AWS using S3, Lambda, S3 ----
-# ****************************************************************
-
 # ***********************************************
 # ---- get call analysis data from S3 bucket ----
 # ***********************************************
 
 # output path to save S3 CSVs to
-# out_path <- "D:/cpo/data/call_analysis/call_analysis.csv"
 out_path <- "D:/cpo/data/call_analysis/aggregate/call_analysis3.csv"
-# out_dir <- "D:/cpo/data/call_analysis/call_analysis.csv"
-
 # Name of S3 bucket
 bucket_name <- "cpo-call-analysis-output"
 
@@ -344,30 +338,6 @@ paste0(out_dir, "/aggregate/call_analysis2.csv")
 # save
 readr::write_csv(call_df, paste0(out_dir, "/aggregate/call_analysis2.csv"))
 
-# # pull in all CSVs and save to local machine
-# call_df <- lapply(1:nrow(bucket_objs), function(i) {
-#
-#   message(paste0(i, "/", nrow(bucket_objs)))
-#
-#   tryCatch({
-#
-#     # read CSVs from S3 bucket
-#     aws.s3::get_object(
-#       bucket_objs$Key[i],
-#       region = "us-west-1",
-#       bucket = bucket_name,
-#       as     = "text"
-#     ) %>%
-#       readr::read_csv(show_col_types = FALSE) %>%
-#       dplyr::mutate(dplyr::across(dplyr::everything(), as.character))
-#
-#   },
-#   error = function(e) {
-#     NULL
-#   })
-# }) %>%
-#   dplyr::bind_rows()
-
 message(paste0("Saving data to path:\n---> ", out_path))
 
 # save
@@ -392,8 +362,7 @@ dist_wdids <-
     priority_date  = as.Date(priority_date)
   ) %>%
   dplyr::filter(water_district == "02", analysis_wdid %in% unique(dist_wdids$analysis_wdid)[1:20])
-unique(dist_wdids$priority_date)
-unique(dist_wdids$analysis_wdid)[1:20]
+
 dist_wdids %>%
   dplyr::filter(year == 2015) %>%
   ggplot2::ggplot() +
@@ -431,19 +400,11 @@ out_calls <-
                 ) %>%
   dplyr::mutate(
     year       = lubridate::year(analysis_date),
-    # admin_no = sprintf("%.5f", analysis_wr_admin_no),
-    # prior_no = sprintf("%.5f", priority_admin_no),
     water_district = substr(analysis_wdid, 0, 2),
     priority_date = as.Date(priority_date)
   ) %>%
   dplyr::group_by(water_district, analysis_date) %>%
   dplyr::slice(which.min(priority_date))
-  # dplyr::filter(water_district == "02")
-  # dplyr::mutate(
-  #   year       = lubridate::year(datetime),
-  #   admin_date = unname(sapply(analysis_wr_admin_no, admins_to_date)),
-  #   prior_date = as.Date(unname(sapply(priority_admin_no, admins_to_date)))
-  # )
 
   out_calls2 <-
     out_calls %>%

@@ -12,7 +12,6 @@ wr_net_path       <- "data/water_right_netamounts.rds"
 wr_pts_path       <- "data/water_right_netamounts_pts.rds"
 uwdids_path       <- "data/unique_wdids.rds"
 
-
 # ***************************************************
 # ---- Water rights netamounts by water district ----
 # ***************************************************
