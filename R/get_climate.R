@@ -54,4 +54,3 @@ if(file.exists(climate_path)) {
   saveRDS(clim_ts, climate_path)
 
 }
-

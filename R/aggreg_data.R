@@ -356,18 +356,6 @@ if(file.exists(ms_path)) {
 
       })
 
-    # plot(huc_net$geometry)
-    # plot(min_lvl$geometry, lwd = 2, color = "red", add = T)
-    # plot(um_net$geometry, color = "red", add = T)
-
-    # min_lvl %>% dplyr::mutate(streamleve = as.character(streamleve),
-    #            streamorde = as.character(streamorde)) %>%
-    #   ggplot2::ggplot() + ggplot2::geom_sf(ggplot2::aes(color = hydroseq))
-
-    # mapview::mapview(ends, color = "green") +
-    #   mapview::mapview(um_net, color = "blue") +
-    #   mapview::mapview(min_lvl, color = "red")
-
   }) %>%
     dplyr::bind_rows()
 
@@ -440,7 +428,6 @@ if(file.exists(end_pts_path)) {
   saveRDS(end_pts, end_pts_path)
 
 }
-
 
 # ***************************
 # ---- get call_analysis ----
@@ -581,7 +568,6 @@ if(file.exists(dist_ms_path)) {
       # minimum stream level of mainstem
       min_lvl <-
         dist_net %>%
-        # huc_outs %>%
         dplyr::filter(streamcalc != 0) %>%
         dplyr::group_by(terminalpa) %>%
         dplyr::filter(streamleve == min(streamleve)) %>%
@@ -607,7 +593,7 @@ if(file.exists(dist_ms_path)) {
         dplyr::filter(levelpathi == main_lvlpath)
 
       min_lvl
-      # mapview::mapview(dist_shp) + min_lvl
+
     }, error = function(e) {
 
       message(paste0("Skipping iteration: ", i, "Error:\n", e))
@@ -680,8 +666,6 @@ if(file.exists(gnis_path)) {
     stop(paste0("Data not found at path ---> ", wd_shp_path))
   }
 
-  # i = 1
-
   # loop over each huc4 and get mainstem of the river
   gnis_flines <- lapply(1:nrow(dist_shp), function(i) {
 
@@ -741,137 +725,6 @@ if(file.exists(gnis_path)) {
 
 }
 
-300 * 2
-
-600 * (20*365)
-
-length(unique(gnis_flines$gnis_id))
-
-unique(gnis_flines$streamorde)
-
-gnis_flines$len %>% hist(breaks = 50)
-gnis_flines$len %>% mean()
-gnis_flines
-gnis_flines %>%
-  dplyr::filter(streamorde >= 4) %>%
-  # mapview::mapview()
-  # dplyr::group_by(gnis_id)
-  # dplyr::filter(gnis_id != "no_gnis_id") %>%
-  dplyr::filter(len > 10000, gnis_id != "no_gnis_id") %>%
-  # dplyr::group_by(gnis_id)
-  ggplot2::ggplot() +
-  # ggplot2::geom_sf()
-  ggplot2::geom_sf(ggplot2::aes(color = streamorde))
-
-gnis_flines  %>%
-  dplyr::filter(streamorde >= 4) %>%
-  dplyr::group_by(gnis_id) %>%
-  dplyr::summarise()  %>%
-  ggplot2::ggplot() +
-  ggplot2::geom_sf()
-  # ggplot2::geom_sf(ggplot2::aes(color = streamorde))
-
-
-gnis_trim <-
-  gnis_flines %>%
-  dplyr::filter(streamorde >= 4) %>%
-  dplyr::filter(len > 10000, gnis_id != "no_gnis_id")
-
-
-wr_pts$gnis_id <- sub("^0+", "", wr_pts$gnis_id)
-
-# wr_gnis <-
-#   wr_pts %>%
-#   dplyr::filter(gnis_id %in% gnis_trim$gnis_id)
-#
-# wr_pts$gnis_id
-
-length(unique(wr_gnis$gnis_id))
-length(unique(wr_gnis$wdid))
-
-wr_gnis <-
-  wr_pts %>%
-  dplyr::filter(gnis_id %in% gnis_trim$gnis_id) %>%
-  dplyr::group_by(gnis_id) %>%
-  dplyr::slice(
-    # which(as.Date(appropriation_date) == mean(as.Date(appropriation_date))),
-    which.min(as.Date(appropriation_date)),
-    which.max(as.Date(appropriation_date))
-    ) %>%
-  dplyr::group_by(gnis_id) %>%
-  dplyr::mutate(
-    seniority = dplyr::case_when(
-      as.Date(appropriation_date) == min(as.Date(appropriation_date)) ~ "senior",
-      TRUE                                                            ~ "junior"
-    )
-  ) %>%
-  dplyr::ungroup()
-
-# wr_gnis %>%
-#   dplyr::left_join(
-#                    dplyr::filter(
-#                      dplyr::select(
-#                      sf::st_drop_geometry(gnis_flines), gnis_id, gnis_name
-#                      ),
-#                      gnis_id %in% wr_gnis$gnis_id
-#                    ),
-#                    by = "gnis_id"
-#                    )
-# wr_gnis
-
-365*30
-11000*364
-
-uwr = unique(wr_gnis$wdid)
-length(uwr)
-
-gnis_ca <- lapply(1:nrow(wr_gnis), function(i) {
-  message(paste0(i, "/", nrow(wr_gnis)))
-
-  # GET request to CDSS API
-  tryCatch({
-    calls <- cdssr::get_call_analysis_wdid(
-      wdid       = wr_gnis$wdid[i],
-      admin_no   = "99999.00000",
-      start_date = "1993-01-01",
-      end_date   = "2023-01-01",
-      api_key    = "2fx+0sUzKbpOWeqkWzbU4BIIOtpwoVyE"
-    ) %>%
-      dplyr::mutate(
-        district            = wr_gnis$district[i],
-        wdid_gnis_id        = wr_gnis$gnis_id[i],
-        wdid_approp_date    = wr_gnis$appropriation_date[i],
-        wdid_structure_name = wr_gnis$structure_name[i],
-        wdid_structure_type = wr_gnis$structure_type[i],
-        seniority           = wr_gnis$seniority[i]
-      )
-    calls
-  }, error = function(e) {
-
-    NULL
-  })
-
-})
-
-call_df <- gnis_ca %>% dplyr::bind_rows()
-saveRDS(call_df, "data/gnis_call_analysis.rds")
-
-# *******************************************
-# ---- get % of out priority per GNIS ID ----
-# *******************************************
-
-length(unique(wr_pts$gnis_id))
-length(unique(wr_pts$gnis_id))
-unique(dist_ms$gnis_id)
-length(unique(dist_ms$gnis_id))
-
-dist_ms %>%
-  ggplot2::ggplot() +
-  ggplot2::geom_sf(ggplot2::aes(color = gnis_id))
-
-mapview::mapview(dist_msu)
-
-3628*1*(20*365)
 # *********************************
 # ---- get end points district ----
 # *********************************
