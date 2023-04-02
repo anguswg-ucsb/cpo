@@ -62,13 +62,8 @@ if(file.exists(out_path)) {
 
 }
 
-
 # ************************************
 # ---- read in call analysis data ----
-# ************************************
-
-# ************************************
-# ************************************
 # ************************************
 
 # read in call analysis data
@@ -343,7 +338,6 @@ call_years %>%
 # percent of time out of priority, by year
 call_years %>%
   dplyr::filter(out_pct > 0) %>%
-  # dplyr::filter(out_pct > 0, year %in% c(rm_years)) %>%
   ggplot2::ggplot() +
   ggplot2::geom_point(ggplot2::aes(x = admin_date, y = out_pct, color = relative_priority)) +
   # ggplot2::facet_grid(year~relative_priority)
@@ -360,9 +354,6 @@ call_years %>%
 
 # box plot of average out_pct
 call_years %>%
-  # dplyr::filter(out_pct > 0, water_district %in% c(rm_districts), year %in% c(rm_years)) %>%
-  # dplyr::filter(out_pct > 0, water_district %in% c(rm_districts)) %>%
-  # dplyr::filter(out_pct > 0, year %in% c(rm_years)) %>%
   dplyr::filter(out_pct > 0) %>%
   ggplot2::ggplot() +
   ggplot2::geom_boxplot(ggplot2::aes(x = admin_date, y = out_pct, fill = relative_priority)) +
@@ -370,32 +361,3 @@ call_years %>%
   # ggplot2::facet_wrap(.~year)
 
 sort(unique(call_years$water_district))
-
-# Reverse hydrograph
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -230,18 +230,6 @@ get_call_data <- function(
   return(call_df)
 }
 
-admin_dates <- function() {
-
-  date_df <- data.frame(
-    # admin_number = 3561:61361,
-    admin        = 3561:61361,
-    admin_date   = seq.Date(from = as.Date("1859/10/01"), by = "1 day", length.out = 57801)
-  )
-
-  return(date_df)
-
-}
-
 admins_to_date <- function(
     admin_no
     ) {
