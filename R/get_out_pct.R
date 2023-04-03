@@ -20,7 +20,7 @@ start_date = "1980-01-01"
 end_date   = "2023-01-01"
 
 # API token for CDSS rest services, provide token if expecting to go over guest API limits
-api_key = NULL
+api_key = "2fx+0sUzKbpOWeqkWzbU4BIIOtpwoVyE"
 
 # Call function to get call data
 call_df <- get_call_data(

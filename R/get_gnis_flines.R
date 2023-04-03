@@ -135,15 +135,18 @@ if(file.exists(wr_gnis_path)) {
     dplyr::filter(gnis_id %in% gnis_trim$gnis_id) %>%
     dplyr::group_by(gnis_id) %>%
     dplyr::slice(
-      # which(as.Date(appropriation_date) == mean(as.Date(appropriation_date))),
       which.min(as.Date(appropriation_date)),
-      which.max(as.Date(appropriation_date))
+      which.max(as.Date(appropriation_date)),
+      which(as.Date(appropriation_date) == median(as.Date(appropriation_date)))[1]
+      # which(as.Date(appropriation_date) == median(as.numeric(as.Date(appropriation_date))))[1]
     ) %>%
+    dplyr::ungroup() %>%
     dplyr::group_by(gnis_id) %>%
     dplyr::mutate(
       seniority = dplyr::case_when(
         as.Date(appropriation_date) == min(as.Date(appropriation_date)) ~ "senior",
-        TRUE                                                            ~ "junior"
+        as.Date(appropriation_date) == max(as.Date(appropriation_date)) ~ "junior",
+        TRUE                                                            ~ "median"
       )
     ) %>%
     dplyr::ungroup()
