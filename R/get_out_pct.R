@@ -13,21 +13,42 @@ source("R/get_gnis_flines.R")
 source("R/utils.R")
 
 # path to save call analysis data
-save_path <- "data/wdid_call_analysis.rds"
+call_save_path <- "data/wdid_call_analysis.rds"
 
 # start and end dates
 start_date = "1980-01-01"
 end_date   = "2023-01-01"
 
 # API token for CDSS rest services, provide token if expecting to go over guest API limits
-api_key = "2fx+0sUzKbpOWeqkWzbU4BIIOtpwoVyE"
+api_key = NULL
 
-# Call function to get call data
-call_df <- get_call_data(
-  wdid_df    = wr_gnis,
-  start_date = start_date,
-  end_date   = end_date,
-  api_key    = api_key,
-  save_path  = save_path
+# load and go get call analysis data
+if(file.exists(call_save_path)) {
+
+  # read in call analysis data
+  call_df <- readRDS(call_save_path)
+
+} else {
+
+  # Call function to get call data
+  call_df <- get_call_data(
+    wdid_df    = wr_gnis,
+    start_date = start_date,
+    end_date   = end_date,
+    api_key    = api_key,
+    save_path  = save_path
   )
 
+  saveRDS(call_df, call_save_path)
+
+}
+
+
+# # Call function to get call data
+# call_df <- get_call_data(
+#   wdid_df    = wr_gnis,
+#   start_date = start_date,
+#   end_date   = end_date,
+#   api_key    = api_key,
+#   save_path  = save_path
+# )

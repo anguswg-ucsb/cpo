@@ -229,7 +229,6 @@ get_call_data <- function(
 
   return(call_df)
 }
-
 admins_to_date <- function(
     admin_no
     ) {
