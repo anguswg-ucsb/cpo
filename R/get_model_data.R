@@ -14,4 +14,38 @@ library(sf)
 source("R/get_climate.R")
 source("R/get_out_pct.R")
 
+# save path
+model_data_path <- "data/model_data.rds"
 
+if(file.exists(model_data_path)) {
+
+    message(paste0(
+        "Reading model data: ",
+        "\n---> ", model_data_path
+    ))
+
+    # get climate gridMET
+    mod_df <- readRDS(model_data_path)
+
+} else {
+
+    message(paste0("Joining climate and call analysis data"))
+
+    mod_df <-
+        call_df %>%
+        dplyr::left_join(
+            clim_ts,
+            by = c("district", "date")
+        )
+
+    message(paste0(
+        "Saving model data: ",
+        "\n---> ", model_data_path
+    ))
+
+    # save path
+    saveRDS(mod_df, model_data_path)
+
+}
+
+rm(call_df, clim_ts, wr_net, dist_shp)

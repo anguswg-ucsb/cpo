@@ -1,0 +1,5 @@
+{
+    "r.plot.defaults.colorTheme": "vscode",
+    "r.session.emulateRStudioAPI": true,
+    "r.session.watchGlobalEnvironment": false
+}

@@ -121,7 +121,13 @@ get_gridmet <- function(
     tidy_gridmet <-
       tidy_gridmet %>%
       dplyr::select(-units) %>%
-      tidyr::pivot_wider(names_from = "variable", values_from = "value")
+      tidyr::pivot_wider(names_from = "variable", values_from = "value") %>%
+      dplyr::mutate(
+        district = dplyr::case_when(
+          as.numeric(district) < 10 ~ paste0("0", district),
+          TRUE                      ~ paste0(district)
+        )
+      )
   }
 
   return(tidy_gridmet)
@@ -179,17 +185,8 @@ get_call_data <- function(
     wdid_df,
     start_date,
     end_date,
-    api_key = NULL,
-    save_path
-    ) {
-
-  if(file.exists(save_path)) {
-
-    message(paste0("Reading data from ---> ", save_path))
-
-    call_df <- readRDS(save_path)
-
-  } else {
+    api_key = NULL
+) {
 
     call_df <- lapply(1:nrow(wdid_df), function(i) {
 
@@ -199,7 +196,8 @@ get_call_data <- function(
       tryCatch({
         calls <- cdssr::get_call_analysis_wdid(
           wdid       = wdid_df$wdid[i],
-          admin_no   = "99999.00000",
+          admin_no   = wdid_df$admin_number[i],
+          # admin_no   = "99999.00000",
           start_date = start_date,
           end_date   = end_date,
           api_key    = api_key
@@ -210,6 +208,7 @@ get_call_data <- function(
             wdid_approp_date    = wdid_df$appropriation_date[i],
             wdid_structure_name = wdid_df$structure_name[i],
             wdid_structure_type = wdid_df$structure_type[i],
+            wdid_admin_no       = wdid_df$admin_number[i],
             seniority           = wdid_df$seniority[i]
           )
         calls
@@ -221,14 +220,183 @@ get_call_data <- function(
     }) %>%
       dplyr::bind_rows()
 
-    message(paste0("Saving data to path ---> ", save_path))
-
-    saveRDS(call_df, save_path)
-
-  }
-
   return(call_df)
+
 }
+
+
+# # Define function to get call data
+# get_call_data <- function(
+#     wdid_df,
+#     start_date,
+#     end_date,
+#     api_key = NULL,
+#     save_path
+#     ) {
+#
+#   # wdid_df    = wr_gnis
+#   # start_date = start_date
+#   # end_date   = end_date
+#   # api_key    = api_key
+#   # save_path  = save_path
+#
+#   if(file.exists(save_path)) {
+#
+#     message(paste0("Reading data from ---> ", save_path))
+#
+#     call_df <- readRDS(save_path)
+#
+#   } else {
+#
+#     # wdid_df <-
+#     #   wdid_df %>%
+#     #   dplyr::filter(district == "05")
+#     # call_df2 <- lapply(1:nrow(wdid_df), function(i) {
+#     #
+#     #   message(paste0(i, "/", nrow(wdid_df)))
+#     #
+#     #   # GET request to CDSS API
+#     #   tryCatch({
+#     #     calls <- cdssr::get_call_analysis_wdid(
+#     #       wdid       = wdid_df$wdid[i],
+#     #       # admin_no   = wdid_df$admin_number[i],
+#     #       admin_no   = "99999.00000",
+#     #       start_date = "2001-01-01",
+#     #       end_date   = "2004-01-01",
+#     #       # start_date = start_date,
+#     #       # end_date   = end_date,
+#     #       api_key    = api_key
+#     #     ) %>%
+#     #       dplyr::mutate(
+#     #         district            = wdid_df$district[i],
+#     #         wdid_gnis_id        = wdid_df$gnis_id[i],
+#     #         wdid_approp_date    = wdid_df$appropriation_date[i],
+#     #         wdid_structure_name = wdid_df$structure_name[i],
+#     #         wdid_structure_type = wdid_df$structure_type[i],
+#     #         wdid_admin_no       = wdid_df$admin_number[i],
+#     #         seniority           = wdid_df$seniority[i]
+#     #       )
+#     #     calls
+#     #   }, error = function(e) {
+#     #
+#     #     NULL
+#     #   })
+#     #
+#     # }) %>%
+#     #   dplyr::bind_rows()
+#
+#     # call_df2 %>%
+#     # ggplot2::ggplot() +
+#     #   ggplot2::geom_line(ggplot2::aes(x = datetime, y = analysis_out_of_priority_percent_of_day)) +
+#     #   ggplot2::facet_wrap(seniority~analysis_wdid, nrow = 6)
+#     #
+#     # call_df2 %>%
+#     #   aggreg_calls() %>%
+#     #   ggplot2::ggplot() +
+#     #   ggplot2::geom_line(ggplot2::aes(x = date, y = out_pct)) +
+#     #   ggplot2::facet_wrap(seniority~wdid, nrow = 6)
+#
+#     call_df <- lapply(1:nrow(wdid_df), function(i) {
+#
+#       message(paste0(i, "/", nrow(wdid_df)))
+#
+#       # GET request to CDSS API
+#       tryCatch({
+#         calls <- cdssr::get_call_analysis_wdid(
+#           wdid       = wdid_df$wdid[i],
+#           # admin_no   = "99999.00000",
+#           admin_no   = wdid_df$admin_number[i],
+#           start_date = start_date,
+#           end_date   = end_date,
+#           api_key    = api_key
+#         ) %>%
+#           dplyr::mutate(
+#             district            = wdid_df$district[i],
+#             wdid_gnis_id        = wdid_df$gnis_id[i],
+#             wdid_approp_date    = wdid_df$appropriation_date[i],
+#             wdid_structure_name = wdid_df$structure_name[i],
+#             wdid_structure_type = wdid_df$structure_type[i],
+#             wdid_admin_no       = wdid_df$admin_number[i],
+#             seniority           = wdid_df$seniority[i]
+#           )
+#         calls
+#       }, error = function(e) {
+#
+#         NULL
+#       })
+#
+#     }) %>%
+#       dplyr::bind_rows()
+#
+#     message(paste0("Saving data to path ---> ", save_path))
+#
+#     saveRDS(call_df, save_path)
+#
+#   }
+#
+#   return(call_df)
+# }
+
+# aggregate the output dataframe from get_call_data from daily timesteps to a weekly timestep to align with average weekly climate data
+aggreg_calls <- function(df) {
+
+  # Convert the sequence to a data frame
+  date_df <-
+    data.frame(
+      # date = seq(as.Date("1979-12-31"), as.Date("2022-12-26"), by = "7 days")
+      date = seq(as.Date("1979-12-31"), Sys.Date(), by = "7 days")
+    ) %>%
+    dplyr::mutate(
+      year     = lubridate::year(date),
+      week_num = strftime(date, format = "%V")
+    )
+
+  weekly_calls <-
+    df %>%
+    dplyr::select(datetime, district,
+                  wdid = analysis_wdid,
+                  wdid_gnis_id,
+                  out_pct = analysis_out_of_priority_percent_of_day,
+                  wdid_approp_date, wdid_structure_name, wdid_structure_type, seniority
+    )  %>%
+    # dplyr::tibble() %>%
+    # dplyr::filter(wdid_gnis_id %in% c("204805", "1385432", "188856")) %>%
+    # dplyr::filter(wdid == "6603301") %>%
+    dplyr::mutate(
+      year     = lubridate::year(datetime),
+      week_num = strftime(datetime, format = "%V")
+    ) %>%
+    dplyr::left_join(
+      date_df,
+      by = c("year", "week_num")
+    ) %>%
+    dplyr::group_by(district, date, wdid, wdid_gnis_id, seniority, wdid_approp_date) %>%
+    dplyr::summarise(
+      out_pct = mean(out_pct, na.rm = T)
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(district,
+                  date, wdid,
+                  gnis_id     = wdid_gnis_id,
+                  approp_date = wdid_approp_date,
+                  seniority,
+                  out_pct
+                  )
+
+  return(weekly_calls)
+
+}
+
+# Convert the sequence to a data frame
+date_df <-
+  data.frame(
+    # date = seq(as.Date("1979-12-31"), as.Date("2022-12-26"), by = "7 days")
+    date = seq(as.Date("1979-12-31"), Sys.Date(), by = "7 days")
+  ) %>%
+  dplyr::mutate(
+    year     = lubridate::year(date),
+    week_num = strftime(date, format = "%V")
+  )
 admins_to_date <- function(
     admin_no
     ) {

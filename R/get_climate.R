@@ -35,6 +35,11 @@ aoi <- sf::read_sf(districts_path)
 
 if(file.exists(climate_path)) {
 
+  message(paste0(
+    "Reading climate data: ",
+    "\n---> ", climate_path
+  ))
+
   # get climate gridMET
   clim_ts <- readRDS(climate_path)
 
@@ -51,6 +56,12 @@ if(file.exists(climate_path)) {
     verbose    = TRUE
   )
 
+  message(paste0(
+    "Saving climate data: ",
+    "\n---> ", climate_path
+  ))
+
+  # save path
   saveRDS(clim_ts, climate_path)
 
 }
