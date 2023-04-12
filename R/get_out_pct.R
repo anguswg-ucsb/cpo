@@ -60,13 +60,12 @@ if(file.exists(weekly_call_path)) {
     rm(call_df)
 
   }
-  # Call function to get call data
+
   call_df <- get_call_data(
     wdid_df    = wr_gnis,
     start_date = start_date,
     end_date   = end_date,
-    api_key    = api_key,
-    save_path  = call_save_path
+    api_key    = NULL
   )
 
   message(paste0(
