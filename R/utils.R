@@ -196,8 +196,8 @@ get_call_data <- function(
       tryCatch({
         calls <- cdssr::get_call_analysis_wdid(
           wdid       = wdid_df$wdid[i],
-          admin_no   = wdid_df$admin_number[i],
-          # admin_no   = "99999.00000",
+          # admin_no   = wdid_df$admin_number[i],
+          admin_no   = "99999.00000",
           start_date = start_date,
           end_date   = end_date,
           api_key    = api_key
@@ -337,14 +337,40 @@ get_call_data <- function(
 #   return(call_df)
 # }
 
+rectify_out_pct <- function(df) {
+
+  df <-
+    df %>%
+    dplyr::mutate(
+      priority_date = dplyr::case_when(
+        is.na(priority_date) ~ "2099-01-01",
+        TRUE                 ~ priority_date
+      ),
+      analysis_out_of_priority_percent_of_day = dplyr::case_when(
+        wdid_approp_date <= priority_date   ~ 0,
+        TRUE                                ~ analysis_out_of_priority_percent_of_day
+      )
+    )
+
+  return(df)
+}
+
 # aggregate the output dataframe from get_call_data from daily timesteps to a weekly timestep to align with average weekly climate data
-aggreg_calls <- function(df) {
+aggreg_calls <- function(df, rectify = TRUE) {
+
+  if(rectify) {
+
+    message(paste0("Rectifying out of priority percent"))
+
+    df <- rectify_out_pct(df)
+  }
 
   # Convert the sequence to a data frame
   date_df <-
     data.frame(
       # date = seq(as.Date("1979-12-31"), as.Date("2022-12-26"), by = "7 days")
       date = seq(as.Date("1979-12-31"), Sys.Date(), by = "7 days")
+      # date = seq(as.Date(min(out$analysis_date)), Sys.Date(), by = "7 days")
     ) %>%
     dplyr::mutate(
       year     = lubridate::year(date),
@@ -359,7 +385,15 @@ aggreg_calls <- function(df) {
                   out_pct = analysis_out_of_priority_percent_of_day,
                   wdid_approp_date, wdid_structure_name, wdid_structure_type, seniority
     )  %>%
-    # dplyr::tibble() %>%
+    # dplyr::select(datetime, district,
+    #               gnis_id = wdid_gnis_id,
+    #               seniority,
+    #               wdid = analysis_wdid,
+    #               priority_wdid,
+    #               wdid_priority_date = wdid_approp_date,
+    #               priority_date = priority_date,
+    #               out_pct = analysis_out_of_priority_percent_of_day
+    # ) %>%
     # dplyr::filter(wdid_gnis_id %in% c("204805", "1385432", "188856")) %>%
     # dplyr::filter(wdid == "6603301") %>%
     dplyr::mutate(
@@ -387,16 +421,7 @@ aggreg_calls <- function(df) {
 
 }
 
-# Convert the sequence to a data frame
-date_df <-
-  data.frame(
-    # date = seq(as.Date("1979-12-31"), as.Date("2022-12-26"), by = "7 days")
-    date = seq(as.Date("1979-12-31"), Sys.Date(), by = "7 days")
-  ) %>%
-  dplyr::mutate(
-    year     = lubridate::year(date),
-    week_num = strftime(date, format = "%V")
-  )
+
 admins_to_date <- function(
     admin_no
     ) {

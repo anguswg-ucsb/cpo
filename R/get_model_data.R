@@ -32,11 +32,11 @@ if(file.exists(model_data_path)) {
     message(paste0("Joining climate and call analysis data"))
 
     mod_df <-
-        call_df %>%
+        week_calls %>%
         dplyr::left_join(
             clim_ts,
             by = c("district", "date")
-        )
+            )
 
     message(paste0(
         "Saving model data: ",
@@ -48,4 +48,4 @@ if(file.exists(model_data_path)) {
 
 }
 
-rm(call_df, clim_ts, wr_net, dist_shp)
+rm(clim_ts, wr_net, dist_shp, wr_pts, week_calls)
