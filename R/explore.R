@@ -12,6 +12,89 @@ library(corrplot)
 # CAUTION, if climate and call analysis data is not already pulled and saved to data/ folder, then this operation can take a while as all climate data and call analysis data must be pulled and downloaded from the internet
 source("R/get_model_data.R")
 
+# *************************************
+# ---- Dive into a single district ----
+# *************************************
+library(GGally)
+doi <- c("02")
+start_date = "2000-01-01"
+end_date   = "2002-01-01"
+
+# dataframe names
+names(mod_df)
+
+# make a subset of the data
+sub_df <-
+  mod_df %>%
+  dplyr::filter(district %in% c(doi), date > start_date, date < end_date)
+
+# plot a district out of priority percent facet plot, plot columns are GNIS IDs and rows are the
+# relative seniority on that GNIS ID (junior, median, senior)
+sub_df %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = date, y = out_pct)) +
+  # ggplot2::facet_grid(gnis_id~seniority)
+  ggplot2::facet_grid(seniority~gnis_id)
+gnis_id = "180770"
+
+sub_clim <-
+  mod_df %>%
+  dplyr::filter(district %in% c(doi)) %>%
+  # dplyr::filter(gnis_id == "180770") %>%
+  dplyr::select(date, wdid, gnis_id, seniority, out_pct, pr, tmmx, spi30d, eddi30d, eddi90d, pdsi)
+
+# climate variable vs out_pct
+sub_clim %>%
+  ggplot2::ggplot() +
+  # ggplot2::geom_point(ggplot2::aes(x = pr, y = out_pct, color = seniority)) +
+  ggplot2::geom_point(ggplot2::aes(x = out_pct, y = pr, color = seniority)) +
+  ggplot2::facet_wrap(~seniority)
+  # ggplot2::facet_grid(gnis_id~seniority)
+  # ggplot2::facet_grid(seniority~gnis_id)
+
+# climate variable vs out_pct
+sub_clim %>%
+  ggplot2::ggplot() +
+  # ggplot2::geom_point(ggplot2::aes(x = pr, y = out_pct, color = seniority)) +
+  ggplot2::geom_bar(ggplot2::aes(y = cut(out_pct, breaks = 10))) +
+  ggplot2::facet_wrap(~seniority)
+
+sub_clim %>%
+  # dplyr::group_by(seniority, gnis_id) %>%
+  dplyr::filter(seniority == "junior") %>%
+  dplyr::group_by(gnis_id) %>%
+  # dplyr::slice(1:1000) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(out_pct, pr, tmmx, spi30d, eddi30d, eddi90d, pdsi) %>%
+  GGally::ggpairs()
+
+# ************************************************************************
+
+library(ggplot2)
+library(tidyr)
+library(GGally)
+
+# create example dataframe
+df <- data.frame(a = rnorm(100, mean = 5),
+                 b = rnorm(100, mean = 10),
+                 c = rnorm(100, mean = 15),
+                 d = rnorm(100, mean = 20))
+# create example dataframe
+df <- data.frame(a = rnorm(100, mean = 5),
+                 b = rnorm(100, mean = 10),
+                 c = rnorm(100, mean = 15),
+                 d = rnorm(100, mean = 20))
+
+# create facetted scatter plot
+ggpairs(df)
+# reshape dataframe into long format
+df_long <- gather(df, key = "variable", value = "value")
+
+# create scatter plot
+ggplot(df_long, aes(x = variable, y = value)) +
+  geom_point()
+
+
 # calculate mean and standard deviation across districts and water rights
 aggreg_df <-
     mod_df %>%
