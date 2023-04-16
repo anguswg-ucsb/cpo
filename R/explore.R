@@ -33,7 +33,6 @@ sub_df <-
 sub_df %>%
   ggplot2::ggplot() +
   ggplot2::geom_line(ggplot2::aes(x = date, y = out_pct)) +
-  # ggplot2::facet_grid(gnis_id~seniority)
   ggplot2::facet_grid(seniority~gnis_id)
 gnis_id = "180770"
 
@@ -49,7 +48,6 @@ sub_clim %>%
   # ggplot2::geom_point(ggplot2::aes(x = pr, y = out_pct, color = seniority)) +
   ggplot2::geom_point(ggplot2::aes(x = out_pct, y = pr, color = seniority)) +
   ggplot2::facet_wrap(~seniority)
-  # ggplot2::facet_grid(gnis_id~seniority)
   # ggplot2::facet_grid(seniority~gnis_id)
 
 # climate variable vs out_pct
@@ -74,27 +72,6 @@ library(ggplot2)
 library(tidyr)
 library(GGally)
 
-# create example dataframe
-df <- data.frame(a = rnorm(100, mean = 5),
-                 b = rnorm(100, mean = 10),
-                 c = rnorm(100, mean = 15),
-                 d = rnorm(100, mean = 20))
-# create example dataframe
-df <- data.frame(a = rnorm(100, mean = 5),
-                 b = rnorm(100, mean = 10),
-                 c = rnorm(100, mean = 15),
-                 d = rnorm(100, mean = 20))
-
-# create facetted scatter plot
-ggpairs(df)
-# reshape dataframe into long format
-df_long <- gather(df, key = "variable", value = "value")
-
-# create scatter plot
-ggplot(df_long, aes(x = variable, y = value)) +
-  geom_point()
-
-
 # calculate mean and standard deviation across districts and water rights
 aggreg_df <-
     mod_df %>%
@@ -112,7 +89,6 @@ aggreg_df2 <-
   dplyr::mutate(
     year = lubridate::year(date)
   )
-  # dplyr::group_by(date, seniority)
 
 aggreg_df2 %>%
   dplyr::filter(year %in% c(2003)) %>%
@@ -142,55 +118,3 @@ corrplot(corr_matrix, method = "circle")
 #     dplyr::summarise(
 #         dplyr::across(c(out_pct:z), list(mean = ~ mean(., na.rm = TRUE), sd = ~ sd(., na.rm = TRUE)))
 #         )
-#
-#
-# # ---- Correlation plot ----
-# library(corrplot)
-# library(datasets)
-# data(iris)
-# myplot <- function(x, y, ...) {
-#     points(x, y, ...)
-#     abline(lm(y ~ x), col = "red")
-# }
-#
-# pairs(iris)
-# # Correlation between climate variables
-# # corr_matrix <- cor(dplyr::select(mod_df, -district, -date), use = "pairwise.complete.obs")
-#
-# pairs(dplyr::select(mod_df,-c(1:6)))
-# aggreg_lst <-
-#     aggreg_df %>%
-#     dplyr::group_by(seniority) %>%
-#     dplyr::group_split()
-#
-# plt = list()
-#
-# nms <- aggreg_df$seniority %>% unique()
-# plt_lst <- lapply(1:length(aggreg_lst), function(i) {
-#     message(paste0(nms[i]))
-#     # aggreg_lst[[i]] %>%
-#     #     dplyr::select(aggreg_lst[[i]], contains("mean"))
-#     corr_matrix <- cor(dplyr::select(aggreg_lst[[i]], contains("mean")), use = "pairwise.complete.obs")
-#
-#     # corr_matrix <- cor(dplyr::select(aggreg_lst[[i]],-c(1:6)), use = "pairwise.complete.obs")
-#
-#     # Create a correlation plot
-#     cor_plot <- corrplot(corr_matrix, method = "circle")
-#     cor_plot
-# }) %>%
-#     stats::setNames(nms)
-# plt_lst$median
-# plt_lst$junior
-# for (i in 1:length(aggreg_lst)) {
-#     # i = 1
-#     aggreg_lst[[i]]
-#     corr_matrix <- cor(dplyr::select(aggreg_lst[[i]],-c(1:6)), use = "pairwise.complete.obs")
-#
-#     # Create a correlation plot
-#     cor_plot <- corrplot(corr_matrix, method = "circle")
-#
-#     plt[[i]] <- cor_plot
-#
-# }
-
-
