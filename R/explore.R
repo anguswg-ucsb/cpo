@@ -5,12 +5,26 @@
 library(climateR)
 library(terra)
 library(dplyr)
+library(ggplot2)
 library(sf)
 library(corrplot)
+library(patchwork)
 
 # Pull in climate/call analysis data for modelling.
 # CAUTION, if climate and call analysis data is not already pulled and saved to data/ folder, then this operation can take a while as all climate data and call analysis data must be pulled and downloaded from the internet
 source("R/get_model_data.R")
+source("R/plot_utils.R")
+
+
+# ****************************
+# ---- Group by seniority ----
+# ****************************
+
+# local path to save plots to
+save_path <- "D:/cpo/plots"
+
+# loop through all climate variables and make a faceted district scatter plots for each climate variable vs out priority %
+make_out_scatter_plots(df = mod_df, save_path = save_path)
 
 # *************************************
 # ---- Dive into a single district ----
