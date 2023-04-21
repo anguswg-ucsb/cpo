@@ -81,7 +81,7 @@ sub_clim <-
   dplyr::select(date, wdid, gnis_id, seniority, out_pct, pr, tmmx, spi30d, eddi30d, eddi90d, pdsi)
 
 # climate variable vs out_pct
-sub_clim %>%
+sub_df %>%
   ggplot2::ggplot() +
   # ggplot2::geom_point(ggplot2::aes(x = pr, y = out_pct, color = seniority)) +
   ggplot2::geom_point(ggplot2::aes(x = out_pct, y = pr, color = seniority)) +
@@ -89,13 +89,13 @@ sub_clim %>%
   # ggplot2::facet_grid(seniority~gnis_id)
 
 # climate variable vs out_pct
-sub_clim %>%
+sub_df %>%
   ggplot2::ggplot() +
   # ggplot2::geom_point(ggplot2::aes(x = pr, y = out_pct, color = seniority)) +
   ggplot2::geom_bar(ggplot2::aes(y = cut(out_pct, breaks = 10))) +
   ggplot2::facet_wrap(~seniority)
 
-sub_clim %>%
+sub_df %>%
   # dplyr::group_by(seniority, gnis_id) %>%
   dplyr::filter(seniority == "junior") %>%
   dplyr::group_by(gnis_id) %>%
@@ -103,6 +103,24 @@ sub_clim %>%
   dplyr::ungroup() %>%
   dplyr::select(out_pct, pr, tmmx, spi30d, eddi30d, eddi90d, pdsi) %>%
   GGally::ggpairs()
+
+
+# ------------------
+# ---- Boxplots ----
+# ------------------
+
+
+# convert week to a date format so we can group by month
+sub_df$date <- as.Date(paste0(df$date, "-1"), format="%Y-%U-%u")
+sub_df$month <- format(sub_df$date, "%Y-%m")
+
+# create the box plot
+sub_df %>%
+  dplyr::filter(district %in% c("06", "07", "05", "02")) %>%
+  ggplot2::ggplot(ggplot2::aes(x=seniority, y=out_pct)) +
+  ggplot2::geom_boxplot() +
+  ggplot2::facet_grid(.~district+month) +
+  ggplot2::labs(title = "Out Percentage by Seniority Group", y = "Out Percentage")
 
 # ************************************************************************
 
