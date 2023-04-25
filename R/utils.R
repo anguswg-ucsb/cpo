@@ -133,6 +133,99 @@ get_gridmet <- function(
   return(tidy_gridmet)
 }
 
+
+go_get_snotel_data <- function(site_ids) {
+
+  site_lst <- lapply(1:length(site_ids), function(i) {
+
+    message(paste0("Site: ", i, "/", length(site_ids)))
+    snotelr::snotel_download(site_id = site_ids[i], internal = TRUE)
+
+  }) %>%
+    dplyr::bind_rows()
+
+  return(site_lst)
+
+}
+
+get_snotel <- function(site_path, district_path) {
+  # path to snotel data
+  # snotel_path <- "data/all_snotel_co.rds"
+
+  # district shape path
+  # district_path <- "data/water_districts_simple.geojson"
+
+  # site_path <- "data/snotel_sites.csv"
+
+  # read in snotel data
+  site_df <- readr::read_csv(site_path)
+
+  site_ids <- unique(site_df$site_id)
+
+  snotel_df <- go_get_snotel_data(site_ids = site_ids)
+
+  # water districts shape
+  dists   <- sf::read_sf(district_path)
+
+  # Convert the sequence to a data frame
+  date_df <-
+    data.frame(
+      date = seq(as.Date("1979-12-31"), Sys.Date(), by = "7 days")
+    ) %>%
+    dplyr::mutate(
+      year     = lubridate::year(date),
+      week_num = strftime(date, format = "%V")
+    )
+
+  # create sf points for snotel sites
+  snotel_pts <-
+    snotel_df %>%
+    dplyr::group_by(site_id) %>%
+    dplyr::slice(1) %>%
+    # dplyr::mutate(
+    #   huc12 = gsub(".*\\((.*)\\).*", "\\1", huc),
+    #   huc4  = substr(huc12, 1, 4)
+    # ) %>%
+    sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+    sf::st_join(
+      dplyr::summarise(dplyr::group_by(dists, BASIN))
+    ) %>%
+    dplyr::relocate(basin = BASIN)
+
+  snotel_df <-
+    snotel_df %>%
+    dplyr::left_join(
+      dplyr::select(sf::st_drop_geometry(snotel_pts), basin, site_id),
+      by = "site_id"
+    ) %>%
+    # dplyr::mutate(
+    #   elev_bin = dplyr::case_when(
+    #     elev <= 3000 ~ "low_elev",
+    #     TRUE          ~ "high_elev"
+    #   )
+    # ) %>%
+    # dplyr::group_by(date, elev_bin, basin) %>%
+    dplyr::group_by(date, basin) %>%
+    dplyr::summarise(
+      swe = mean(snow_water_equivalent, na.rm =T)
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::rename(datetime = date) %>%
+    dplyr::mutate(
+      year     = lubridate::year(datetime),
+      week_num = strftime(datetime, format = "%V")
+    ) %>%
+    dplyr::left_join(
+      date_df,
+      by = c("year", "week_num")
+    ) %>%
+    dplyr::group_by(basin, date) %>%
+    dplyr::summarise(
+      swe = mean(swe, na.rm =T)
+    )
+
+  return(snotel_df)
+}
 # define a function to crop and mask a single SpatRaster for a single polygon
 #' Internal function used in get_climate
 #'
