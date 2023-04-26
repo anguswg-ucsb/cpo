@@ -9,7 +9,6 @@ library(sf)
 library(nhdplusTools)
 library(snotelr)
 
-# install.packages("snotelr")
 # source climate/call analysis data and/or go get the data if its not there
 # source("R/get_climate.R")
 

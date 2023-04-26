@@ -14,7 +14,7 @@ start_date <- "1980-01-01"
 end_date   <- "2023-01-01"
 
 # local path to waterdistricts shape
-districts_path <- "data/water_districts_simple.geojson"
+district_path <- "data/water_districts_simple.geojson"
 
 # save path
 climate_path <- "data/weekly_climate.rds"
@@ -31,7 +31,7 @@ varname <- c("pr", "tmmn", "tmmx", "pdsi", "pet",
              "eddi14d", "eddi30d", "eddi90d", "eddi1y", "z")
 
 # read in water districts polygon
-aoi <- sf::read_sf(districts_path)
+aoi <- sf::read_sf(district_path)
 
 if(file.exists(climate_path)) {
 

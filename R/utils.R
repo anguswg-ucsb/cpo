@@ -226,6 +226,11 @@ get_snotel <- function(site_path, district_path) {
 
   return(snotel_df)
 }
+
+# impute missing values w/ mean
+impute_mean <- function(x) {
+  replace(x, is.na(x), mean(x, na.rm = TRUE))
+}
 # define a function to crop and mask a single SpatRaster for a single polygon
 #' Internal function used in get_climate
 #'
