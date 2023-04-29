@@ -50,7 +50,7 @@ sub_month <-
     ) %>%
   dplyr::summarise(
     dplyr::across(
-      c(out_pct:z), \(x) mean(x,  na.rm = TRUE)
+      c(out_pct:swe), \(x) mean(x,  na.rm = TRUE)
       # c("out_pct", "pr", "tmmx", "spi30d", "eddi30d", "eddi90d", "pdsi"),
     )
   )  %>%
@@ -64,9 +64,9 @@ sub_month <-
 month_lm <-
   sub_month %>%
   # dplyr::select(-wdid, -gnis_id, -seniority) %>%
-  dplyr::select(-month, -year, -out_pct) %>%
+  dplyr::select(-month, -year, -out_pct_log) %>%
   # dplyr::rename(out_pct = out_pct_sqrt) %>%
-  dplyr::rename(out_pct = out_pct_log) %>%
+  # dplyr::rename(out_pct = out_pct_log) %>%
   tidyr::pivot_longer(
     cols = c(-out_pct, -uid),
     # cols = c(-out_pct, -uid, -month, -year),
@@ -94,17 +94,23 @@ month_lm <-
     into = c("district", "wdid", "gnis_id", "seniority", "approp_date", "pred_name"),
     sep  = "_"
   )
+
+top_preds <-
+  month_lm %>%
+  dplyr::select(district, wdid, gnis_id, seniority, approp_date, pred_name, rsq = r.squared) %>%
+  dplyr::group_by(wdid, gnis_id, seniority) %>%
+  dplyr::arrange(-rsq) %>%
+  dplyr::slice(1)
+
 max(month_lm$r.squared, na.rm = T)
 mean(month_lm$r.squared, na.rm = T)
 hist(month_lm$r.squared)
-
 
 # ----------------------------------
 # ---- District rights averages ----
 # ----------------------------------
 
 #  average rights junior, median, senior rights across each district
-
 sub_right <-
   mod_df %>%
   dplyr::mutate(
@@ -116,7 +122,7 @@ sub_right <-
   dplyr::group_by(date, district, seniority) %>%
   dplyr::summarise(
     dplyr::across(
-      c(out_pct:z), \(x) mean(x,  na.rm = TRUE)
+      c(out_pct:swe), \(x) mean(x,  na.rm = TRUE)
       # c("out_pct", "pr", "tmmx", "spi30d", "eddi30d", "eddi90d", "pdsi"),
     )
   ) %>%
@@ -156,6 +162,181 @@ right_lm <-
     into = c("district", "seniority", "pred_name"),
     sep  = "_"
   )
+hist(right_lm$r.squared)
+max(right_lm$r.squared, na.rm = T)
+mean(right_lm$r.squared, na.rm = T)
+min(right_lm$r.squared, na.rm = T)
+
+# ------------------------
+# ---- Right o graphs ----
+# ------------------------
+
+calls_df <-  readRDS("data/wdid_call_analysis.rds")
+tmp <-
+  calls_df %>%
+  dplyr::filter(analysis_wdid == "0100805") %>%
+  dplyr::mutate(
+    day   = lubridate::yday(datetime),
+    year  = as.character(lubridate::year(datetime)),
+    week  = lubridate::week(datetime),
+    week_date = lubridate::weeks(datetime )
+  ) %>%
+  dplyr::mutate(
+    priority_date = dplyr::case_when(
+      is.na(priority_date) ~ Sys.Date(),
+      TRUE                 ~ as.Date(priority_date)
+      # is.na(priority_date) ~ as.Date("2019-12-31"),
+      # TRUE                 ~ as.Date(priority_date)
+    )
+  )
+
+tmp %>%
+  dplyr::filter(year == "2002") %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = datetime, y = priority_date), size = 1.5) +
+  ggplot2::labs(
+    title = paste0("Right-o-graph"),
+    subtitle = "WDID: 0100805",
+    # caption = "Black horizontal line represents average % out of priority over the period of record",
+    x     = "",
+    y     = "Priority Date",
+    color = "Year"
+  ) +
+  ggplot2::theme_bw() +
+  ggplot2::theme(
+    plot.title        = ggplot2::element_text(size = 18, face = "bold", hjust = 0.5),
+    plot.subtitle     = ggplot2::element_text(size = 14, hjust = 0.5),
+    legend.title      = ggplot2::element_text(size = 18, hjust = 0.5, face = "bold"),
+    legend.text       = ggplot2::element_text(size = 16),
+    axis.title        = ggplot2::element_text(size = 16, face = "bold"),
+    axis.text         = ggplot2::element_text(size = 16),
+    legend.key.width  = unit(1.5, "cm"),
+    legend.text.align = 0,
+    legend.key.height = unit(1, "cm")
+  )
+
+tmp %>% .$wdid_gnis_id %>% unique()
+wr_pts <-
+  wr_net %>%
+  dplyr::filter(gnis_id == "00171161") %>%
+  sf::st_as_sf(
+    coords = c("longitude", "latitude"),
+    crs    = 4326
+  )
+
+
+flines <- gnis_flines %>%
+  dplyr::filter(gnis_id == "171161")
+
+mapview::mapview(flines) + wr_pts
+ggplot2::ggplot() +
+  ggplot2::
+tmp %>%
+  dplyr::filter(year == "2010") %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = datetime, y = priority_date),
+                     alpha = 0.9, size = 2.5)
+# calls_df %>%
+#   dplyr::filter(analysis_wdid == "0100805")  %>%
+#   dplyr::mutate(
+#     day   = lubridate::yday(datetime),
+#     year  = as.character(lubridate::year(datetime)),
+#     week  = lubridate::week(datetime),
+#     week_date = lubridate::weeks(datetime )
+#   ) %>%
+#   dplyr::group_by(year, week, analysis_wdid) %>%
+#   dplyr::summarise(
+#     out_pct       = mean(analysis_out_of_priority_percent_of_day, na.rm = T)/100,
+#     priority_date = mean(priority_date, na.rm = T)
+#   ) %>%
+#   dplyr::ungroup() %>%
+#   dplyr::rename(wdid = analysis_wdid)
+
+
+# --------------------
+# ---- timeseries ----
+# --------------------
+# gnisid 171161
+# wdid junior: 0100805
+# wdid senior: 0100643
+jun_out <-
+  mod_df %>%
+  dplyr::filter(district == "01", wdid == "0100805") %>%
+  dplyr::mutate(
+    year = lubridate::year(date),
+    month = lubridate::month(date)
+    )  %>%
+  dplyr::select(date, wdid, swe, out_pct)
+
+ts(out_ts$out_pct)
+
+swe_ts <- ts(jun_out$swe)
+out_ts <- ts(jun_out$out_pct)
+
+model <- arima(out_ts, xreg = swe_ts)
+summary(model)
+plot(residuals(model))
+acf(residuals(model))
+pacf(residuals(model))
+
+new_swe <- ts(c(10, 20, 30), frequency = 52)
+forecast <- forecast(model, xreg = new_swe)
+new_swe <- ts(c(10, 20, 30), frequency = 52)
+pred <- predict(model, newdata = data.frame(swe = new_swe), interval = "prediction")
+# swe_ts <- ts(jun_out$swe, frequency = 52)
+# out_ts <- ts(jun_out$out_pct, frequency = 52)
+
+# winter_swe
+jun_out %>%
+  dplyr::filter(
+    month %in% c(11, 12, 1, 2, 3)
+  ) %>%
+  dplyr::select(date, wdid, swe)
+
+jun_out %>%
+  dplyr::filter(
+    !month %in% c(11, 12, 1, 2, 3)
+  ) %>%
+  dplyr::select(date, wdid, out_pct)
+
+jun_out %>%
+  # dplyr::filter(year %in% c(2010, 2011)) %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_point(ggplot2::aes(x = out_pct, y = swe))
+
+sen_out <-
+  mod_df %>%
+  dplyr::filter(district == "01", wdid == "0100643") %>%
+  dplyr::mutate(year = lubridate::year(date))
+
+sen_out %>%
+  dplyr::filter(year %in% c(2010, 2011)) %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = date, y = swe))
+
+mod_df %>%
+  dplyr::filter(district == "01", seniority == "senior") %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = date, y = out_pct)) +
+  ggplot2::facet_wrap(gnis_id~wdid)
+  # ggplot2::facet_grid(gnis_id~wdid)
+
+mod_df %>%
+  dplyr::filter(district == "01", seniority == "junior") %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = date, y = out_pct)) +
+  ggplot2::facet_wrap(gnis_id~wdid)
+  ggplot2::facet_wrap(~wdid)
+
+
+mod_df %>%
+  dplyr::filter(district == "01", seniority == "median") %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = date, y = out_pct)) +
+  ggplot2::facet_wrap(~wdid)
+
+# -------------------------------------
+# -------------------------------------
 
 # -------------------------------------
 # ---- Dive into a single district ----
