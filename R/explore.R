@@ -27,6 +27,13 @@ save_path <- "D:/cpo/plots"
 # loop through all climate variables and make a faceted district scatter plots for each climate variable vs out priority %
 make_out_scatter_plots(df = mod_df, save_path = save_path)
 
+# ---------------------------
+# ---- Correlation plot -----
+# ---------------------------
+
+# make a list of correlation plots per district, save to specified path
+corr_plots <- make_corr_plots(df = mod_df, save_path = save_path)
+
 # ------------------------------------------
 # ---- Monthly linear regression models ----
 # ------------------------------------------
