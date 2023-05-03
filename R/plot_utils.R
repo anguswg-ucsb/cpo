@@ -1,5 +1,10 @@
 make_corr_plots <- function(df, save_path) {
 
+   # df <-
+   #  mod_df %>%
+   #  dplyr::mutate(month = lubridate::month(date)) %>%
+   #  dplyr::filter(month %in% c(6, 7, 8, 9))
+
   df <-
     df %>%
     dplyr::group_by(district) %>%
@@ -11,7 +16,7 @@ make_corr_plots <- function(df, save_path) {
 
     message(paste0("Calculating correlations - (District ", unique(d$district), ")"))
 
-    out_cor <-
+  out_cor <-
       d %>%
       dplyr::select(where(is.numeric)) %>%
       cor(use =  "pairwise.complete.obs") %>%
@@ -53,6 +58,103 @@ make_corr_plots <- function(df, save_path) {
       paste0(save_path, "/correlation_mat_",  unique(d$district), ".png"),
       cor_plot,
       height = 8,
+      width  = 18,
+      scale  = 1
+    )
+
+  })
+
+  return(cor_lst)
+
+}
+
+make_rights_corr_plots <- function(df, save_path) {
+
+  # df <-
+  #  mod_df %>%
+  #  dplyr::mutate(month = lubridate::month(date)) %>%
+  #  dplyr::filter(month %in% c(6, 7, 8, 9))
+
+  df <-
+    df %>%
+    dplyr::group_by(district) %>%
+    dplyr::group_split()
+
+  cor_lst <- lapply(1:length(df), function(i) {
+
+    d <- df[[i]]
+
+    message(paste0("Calculating correlations by right - (District ", unique(d$district), ")"))
+
+    rights <-
+      d %>%
+      dplyr::filter(seniority != "median") %>%
+      dplyr::group_by(seniority) %>%
+      dplyr::group_split()
+
+    right_lst <- lapply(1:length(rights), function(z) {
+
+      # water right category
+      right_cat <- rights[[z]]$seniority[1]
+
+      out_cor <-
+        rights[[z]] %>%
+        # d %>%
+        dplyr::select(where(is.numeric)) %>%
+        cor(use =  "pairwise.complete.obs") %>%
+        round(2) %>%
+        reshape2::melt() %>%
+        dplyr::mutate(seniority = right_cat)
+      out_cor
+
+    }) %>%
+      dplyr::bind_rows()
+
+      cor_plot <-
+        ggplot2::ggplot(
+          data = right_lst,
+          ggplot2::aes(
+            x    = Var1,
+            y    = Var2,
+            fill = value
+          )
+        ) +
+        ggplot2::geom_tile() +
+        ggplot2::geom_text(
+          aes(Var2, Var1, label = value),
+          color = "black",
+          size  = 3
+        ) +
+        ggplot2::labs(
+          title = paste0("Correlation Matrices - District ",
+                         unique(d$district)),
+          x = "",
+          y = ""
+        ) +
+        ggplot2::facet_wrap(~seniority, nrow = length(unique(right_lst$seniority))) +
+        # ggplot2::facet_wrap(~seniority, nrow = 1) +
+        ggplot2::scale_fill_gradient2(low="darkred",
+                                      high="midnightblue",
+                                      guide="colorbar") +
+        # viridis::scale_fill_viridis() +
+        ggplot2::theme(
+          plot.title  = ggplot2::element_text(size = 16, face = "bold", hjust = 0.5),
+          axis.text.x = ggplot2::element_text(angle = -45),
+          strip.text = ggplot2::element_text(size = 14, face = "bold")
+        )
+
+      message(paste0("Saving correlation plot vs ",
+                     "\n---> ",
+                     save_path, "/correlation_mat_",  unique(d$district), "_rights.png")
+      )
+
+
+
+    # Save the plots to files
+    ggplot2::ggsave(
+      paste0(save_path, "/correlation_mat_",  unique(d$district), "_rights.png"),
+      cor_plot,
+      height = 10,
       width  = 18,
       scale  = 1
     )

@@ -148,7 +148,13 @@ go_get_snotel_data <- function(site_ids) {
 
 }
 
-get_snotel <- function(site_path, district_path) {
+get_snotel <- function(
+    site_path,
+    district_path,
+    start_lag = 3,
+    end_lag   = 12
+    ) {
+
   # path to snotel data
   # snotel_path <- "data/all_snotel_co.rds"
 
@@ -224,7 +230,55 @@ get_snotel <- function(site_path, district_path) {
       swe = mean(swe, na.rm =T)
     )
 
+  # add lagged SWE value by basin, default lag is 3-12 month lags
+  snotel_df <-
+    snotel_df %>%
+    dplyr::group_by(basin) %>%
+    timetk::tk_augment_lags(swe, .lags = seq(start_lag*4, end_lag*4, 4)) %>%
+    stats::setNames(
+      c("basin", "date", "swe",
+        paste0("swe_lag_", seq(start_lag, end_lag), "_month"))
+                    ) %>%
+    dplyr::ungroup()
+
+  # # add monthly by year and basin
+  # snotel_df <-
+  #   snotel_df %>%
+  #   dplyr::mutate(
+  #     year  = lubridate::year(date)
+  #   ) %>%
+  #   dplyr::left_join(
+  #     na.omit(
+  #       tidyr::pivot_wider(
+  #         na.omit(
+  #           dplyr::mutate(
+  #             dplyr::ungroup(
+  #               dplyr::summarise(
+  #                 dplyr::group_by(
+  #                   dplyr::mutate(snotel_df,
+  #                                 month = lubridate::month(date, label = T),
+  #                                 year  = lubridate::year(date)
+  #                   ),
+  #                   basin, month, year
+  #                 ),
+  #                 swe = max(swe, na.rm = T)
+  #               )
+  #             ),
+  #             month = tolower(month)
+  #           )
+  #         ),
+  #         names_from  = "month",
+  #         names_glue  = "{month}_{.value}",
+  #         values_from = "swe"
+  #       )
+  #     ),
+  #     by = c("basin", "year")
+  #   ) %>%
+  #   dplyr::select(-year) %>%
+  #   dplyr::ungroup()
+
   return(snotel_df)
+
 }
 
 # impute missing values w/ mean

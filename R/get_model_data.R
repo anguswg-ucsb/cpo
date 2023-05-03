@@ -79,7 +79,10 @@ if(file.exists(model_data_path)) {
 
 }
 
-rm(clim_ts, wr_net, dist_shp, wr_pts, week_calls)
+rm(clim_ts, wr_net, dist_shp, wr_pts, week_calls, gnis_flines, snotel_df,
+   wr_gnis, districts_path, end_date, start_date, site_path, gnis_path,
+   api_key, weekly_call_path, wr_net_path, wr_pts_path, swe_path, uwdids_path,
+   climate_path, call_save_path, wr_gnis_path)
 
 #  =======================================
 #  =======================================

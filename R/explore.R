@@ -17,12 +17,12 @@ library(ggpubr)
 source("R/get_model_data.R")
 source("R/plot_utils.R")
 
+# local path to save plots to
+save_path <- "D:/cpo/plots"
+
 # ----------------------------
 # ---- Group by seniority ----
 # ----------------------------
-
-# local path to save plots to
-save_path <- "D:/cpo/plots"
 
 # loop through all climate variables and make a faceted district scatter plots for each climate variable vs out priority %
 make_out_scatter_plots(df = mod_df, save_path = save_path)
@@ -31,8 +31,38 @@ make_out_scatter_plots(df = mod_df, save_path = save_path)
 # ---- Correlation plot -----
 # ---------------------------
 
+df <-
+  mod_df %>%
+  dplyr::mutate(month = lubridate::month(date)) %>%
+  dplyr::filter(month %in% c(5, 6, 7, 8, 9))
+
+ dplyr::filter(
+   dplyr::mutate(mod_df, month = lubridate::month(date)),
+   month %in% c(5, 6, 7, 8, 9)
+   )
 # make a list of correlation plots per district, save to specified path
-corr_plots <- make_corr_plots(df = mod_df, save_path = save_path)
+corr_plots <- make_corr_plots(
+  df        =  dplyr::select(
+                  dplyr::filter(
+                          dplyr::mutate(mod_df, month = lubridate::month(date)),
+                          month %in% c(5, 6, 7, 8, 9)
+                          ), -month
+                  ),
+  save_path = save_path
+  )
+
+
+# make a list of correlation plots per district, save to specified path
+right_corr_plots <- make_rights_corr_plots(
+  # df        =  dplyr::select(
+  #                         dplyr::filter(
+  #                           dplyr::mutate(mod_df, month = lubridate::month(date)),
+  #                           month %in% c(5, 6, 7, 8, 9)
+  #                         ), -month
+  #                       ),
+  df = mod_df,
+  save_path = save_path
+)
 
 # ------------------------------------------
 # ---- Monthly linear regression models ----
