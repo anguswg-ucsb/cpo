@@ -66,7 +66,8 @@ out_df <-
       TRUE        ~ "0"
     ),
     out_pct = factor(out_pct, levels = c("1", "0"))
-  )
+  ) %>%
+  dplyr::select(-date)
 
 out_lst <-
   out_df %>%
@@ -320,7 +321,7 @@ out_wfs <-
 
 # Choose metrics
 # my_metrics <- yardstick::metric_set(rsq, rmse, mae)
-my_metrics <- yardstick::metric_set(roc_auc, pr_auc, accuracy, mn_log_loss)
+my_metrics <- yardstick::metric_set(roc_auc, accuracy, mn_log_loss)
 
 # Set up parallelization, using computer's other cores
 parallel::detectCores(logical = FALSE)
@@ -382,7 +383,7 @@ reg_mod_comp_plot <-
 
 reg_mod_comp_plot
 for (i in 1:length(out_wfs$wflow_id)) {
-# i = 3
+# i = 1
 model       <- out_wfs$wflow_id[i]
 model_name  <- out_wfs$info[[i]]$model
 
@@ -407,14 +408,14 @@ logger::log_info("\n\nExtracting workflow & finalizing model fit:\n  --->  {mode
 # mod_results$.metrics[[1]]
 
 # print(select_best(mod_results, metric = "rmse"))
-print(select_best(mod_results, metric = "rsq"))
-# select_best(mod_results, metric = "roc_auc")
+# print(select_best(mod_results, metric = "rsq"))
+select_best(mod_results, metric = "roc_auc")
 # rm(mod_workflow_fit)
 # Finalize workflow fit
 mod_workflow_fit <-
   mod_workflow %>%
-  # finalize_workflow(select_best(mod_results, metric = "roc_auc")) %>%
-  finalize_workflow(select_best(mod_results, metric = "rsq")) %>%
+  finalize_workflow(select_best(mod_results, metric = "roc_auc")) %>%
+  # finalize_workflow(select_best(mod_results, metric = "rsq")) %>%
   fit(data = out_train)
 
 # Fit model to split train/test data
@@ -427,21 +428,21 @@ print(tune::collect_metrics(mod_last_fit))
 mod_final_fit <- mod_last_fit$.workflow[[1]]
 
 # Resampled CV Fold AUC ROC Curve
-# resample_roc_plot <-
-#   mod_results %>%
-#   collect_predictions() %>%
-#   group_by(id) %>%
-#   roc_curve(win, .pred_1) %>%
-#   ggplot(aes(1 - specificity, sensitivity, color = id)) +
-#   geom_abline(lty = 2, color = "gray80", size = 1.5) +
-#   geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
-#   coord_equal() +
-#   labs(
-#     title    = paste0("AUC-ROC Curve - ", model_name),
-#     subtitle = "Resample results from 10 Fold Cross Validation",
-#     x        = "1 - Specificity",
-#     y        = "Sensitivity"
-#   )
+resample_roc_plot <-
+  mod_results %>%
+  collect_predictions() %>%
+  group_by(id) %>%
+  roc_curve(out_pct, .pred_1) %>%
+  ggplot(aes(1 - specificity, sensitivity, color = id)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
+  coord_equal() +
+  labs(
+    title    = paste0("AUC-ROC Curve - ", model_name),
+    subtitle = "Resample results from 10 Fold Cross Validation",
+    x        = "1 - Specificity",
+    y        = "Sensitivity"
+  )
 # save ROC AUC plot to "aw-poudre-2020/dflow/boatable_day_plots/
 resample_plot_path  <-   paste0(ml_data_path, "plots/win_class_resample_aucroc_", model_name, ".png")
 logger::log_info("\n\nSaving Resamples AUC-ROC curve: \n{resample_plot_path}")
