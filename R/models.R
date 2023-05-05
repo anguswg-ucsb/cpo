@@ -14,21 +14,6 @@ library(themis)
 source("R/get_model_data.R")
 source("R/plot_utils.R")
 
-# dists <-
-#   mod_df %>%
-#   dplyr::select(basin, district) %>%
-#   dplyr::group_by(district) %>%
-#   dplyr::slice(1) %>%
-#   dplyr::ungroup()
-
-# 1 - 9
-# 19, 17
-# 21, 22
-# 31
-# 38
-#  64, 68
-# 70, 72
-
 dists <- c(
   "01", "02", "03", "04", "05",
   "06", "07", "08", "09", "17",
@@ -41,7 +26,6 @@ out_df <-
   mod_df %>%
   # dplyr::filter(district %in% dists) %>%
   # dplyr::filter(seniority != "median") %>%
-  # dplyr::group_by(wdid, gnis_id) %>%
   dplyr::mutate(
     # median_date = mean(as.Date(approp_date))
     month = lubridate::month(date),
@@ -73,38 +57,6 @@ out_lst <-
   out_df %>%
   dplyr::group_by(basin) %>%
   dplyr::group_split()
-
-out_lst[[3]]
-
-# meds <-out_df %>%
-#   dplyr::filter(gnis_id == "182928") %>%
-#   dplyr::select(1:8) %>%
-#   dplyr::filter(seniority == "median") %>%
-#   tidyr::pivot_wider( names_from = "seniority",values_from = "approp_date")
-# non_meds <-out_df %>%
-#   # dplyr::filter(gnis_id == "182928") %>%
-#   dplyr::select(1:8) %>%
-#   # dplyr::filter(seniority != "median") %>%
-#   tidyr::pivot_wider(
-#     # id_cols = c(-wdid),
-#     names_from = "seniority",
-#     values_from = "approp_date") %>%
-#   dplyr::group_by(gnis_id) %>%
-#   tidyr::fill(c(senior, junior, median), .direction = "updown") %>%
-#   dplyr::ungroup() %>%
-#   dplyr::group_by(date, gnis_id) %>%
-#   dplyr::slice(1) %>%
-#   dplyr::mutate(
-#     j_diff = as.numeric(abs(as.Date(median) - as.Date(junior))),
-#     s_diff = as.numeric(abs(as.Date(median) - as.Date(senior))),
-#     new_right = dplyr::case_when(
-#       s_diff >= j_diff ~ "junior",
-#       TRUE            ~ "senior"))
-# tmp2 <-out_df %>%
-#   dplyr::left_join(
-#     dplyr::select(non_meds, basin, district, wdid, gnis_id, date, new_right) ,
-#     by = c("wdid", "gnis_id"))
-#   dplyr::select(non_meds, basin, district, wdid, gnis_id, date, new_right)
 
 # -------------------------
 # ---- Test/Train data ----
@@ -366,128 +318,122 @@ out_wfs <-
 modeltime::parallel_stop()
 
 rank_results(out_wfs)
-# New facet label names for variable
-# metric_labs <- c("MAE", "RMSE", "R2")
-# names(metric_labs) <- c("MAE", "RMSE", "R2")
 
 # Comparing Accuracy and ROC AUC of 7 models
 reg_mod_comp_plot <-
   out_wfs %>%
-  # out_wfs[c(1:6),] %>%
   autoplot() +
   labs(
-    # col = "Models",
     col = "",
     title    = "Regression Model comparisons"
   )
 
 reg_mod_comp_plot
 for (i in 1:length(out_wfs$wflow_id)) {
-# i = 1
-model       <- out_wfs$wflow_id[i]
-model_name  <- out_wfs$info[[i]]$model
 
-model
+    model       <- out_wfs$wflow_id[i]
+    model_name  <- out_wfs$info[[i]]$model
 
-mod_results <-
-  out_wfs %>%
-  workflowsets::extract_workflow_set_result(model)
 
-# Extract workflows
-mod_workflow <-
-  out_wfs %>%
-  extract_workflow(model)
+    mod_results <-
+      out_wfs %>%
+      workflowsets::extract_workflow_set_result(model)
 
-# Model Engine text
-model_engine <- mod_workflow$fit$actions$model$spec$engine
+    # Extract workflows
+    mod_workflow <-
+      out_wfs %>%
+      extract_workflow(model)
 
-# Model Engine text
-model_mode <- mod_workflow$fit$actions$model$spec$mode
+    # Model Engine text
+    model_engine <- mod_workflow$fit$actions$model$spec$engine
 
-logger::log_info("\n\nExtracting workflow & finalizing model fit:\n  --->  {model_name} - {model_mode}")
-# mod_results$.metrics[[1]]
+    # Model Engine text
+    model_mode <- mod_workflow$fit$actions$model$spec$mode
 
-# print(select_best(mod_results, metric = "rmse"))
-# print(select_best(mod_results, metric = "rsq"))
-select_best(mod_results, metric = "roc_auc")
-# rm(mod_workflow_fit)
-# Finalize workflow fit
-mod_workflow_fit <-
-  mod_workflow %>%
-  finalize_workflow(select_best(mod_results, metric = "roc_auc")) %>%
-  # finalize_workflow(select_best(mod_results, metric = "rsq")) %>%
-  fit(data = out_train)
+    logger::log_info("\n\nExtracting workflow & finalizing model fit:\n  --->  {model_name} - {model_mode}")
+    # mod_results$.metrics[[1]]
 
-# Fit model to split train/test data
-mod_last_fit <- tune::last_fit(mod_workflow_fit, out_split)
+    # print(select_best(mod_results, metric = "rmse"))
+    # print(select_best(mod_results, metric = "rsq"))
+    select_best(mod_results, metric = "roc_auc")
+    # rm(mod_workflow_fit)
+    # Finalize workflow fit
+    mod_workflow_fit <-
+      mod_workflow %>%
+      finalize_workflow(select_best(mod_results, metric = "roc_auc")) %>%
+      # finalize_workflow(select_best(mod_results, metric = "rsq")) %>%
+      fit(data = out_train)
 
-# print(tune::collect_metrics(mod_results)$mean)
-print(tune::collect_metrics(mod_last_fit))
+    # Fit model to split train/test data
+    mod_last_fit <- tune::last_fit(mod_workflow_fit, out_split)
 
-# Extract & save final fit to use for predictions
-mod_final_fit <- mod_last_fit$.workflow[[1]]
+    # print(tune::collect_metrics(mod_results)$mean)
+    print(tune::collect_metrics(mod_last_fit))
 
-# Resampled CV Fold AUC ROC Curve
-resample_roc_plot <-
-  mod_results %>%
-  collect_predictions() %>%
-  group_by(id) %>%
-  roc_curve(out_pct, .pred_1) %>%
-  ggplot(aes(1 - specificity, sensitivity, color = id)) +
-  geom_abline(lty = 2, color = "gray80", size = 1.5) +
-  geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
-  coord_equal() +
-  labs(
-    title    = paste0("AUC-ROC Curve - ", model_name),
-    subtitle = "Resample results from 10 Fold Cross Validation",
-    x        = "1 - Specificity",
-    y        = "Sensitivity"
-  )
-# save ROC AUC plot to "aw-poudre-2020/dflow/boatable_day_plots/
-resample_plot_path  <-   paste0(ml_data_path, "plots/win_class_resample_aucroc_", model_name, ".png")
-logger::log_info("\n\nSaving Resamples AUC-ROC curve: \n{resample_plot_path}")
+    # Extract & save final fit to use for predictions
+    mod_final_fit <- mod_last_fit$.workflow[[1]]
 
-# Export plot
-ggsave(
-  resample_plot_path,
-  plot   = resample_roc_plot
-)
-
-# Plot variable importance if avaliable for model
-tryCatch(
-  {
-    vip_plot <-
-    mod_last_fit %>%
-      pluck(".workflow", 1) %>%
-      extract_fit_parsnip() %>%
-      # vip::vi()
-      # vip::vip() +
-      vip::vip(num_features = 70) +
-      # vip::vip(num_features = 30) +
+    # Resampled CV Fold AUC ROC Curve
+    resample_roc_plot <-
+      mod_results %>%
+      collect_predictions() %>%
+      group_by(id) %>%
+      roc_curve(out_pct, .pred_1) %>%
+      ggplot(aes(1 - specificity, sensitivity, color = id)) +
+      geom_abline(lty = 2, color = "gray80", size = 1.5) +
+      geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
+      coord_equal() +
       labs(
-        title    = paste0("Variable Importance Scores - ", model_name),
-        subtitle = "Regression",
-        y        = "Importance",
-        x        = "Variables"
+        title    = paste0("AUC-ROC Curve - ", model_name),
+        subtitle = "Resample results from 10 Fold Cross Validation",
+        x        = "1 - Specificity",
+        y        = "Sensitivity"
       )
-
     # save ROC AUC plot to "aw-poudre-2020/dflow/boatable_day_plots/
-    vip_path  <-   paste0(ml_data_path, "plots/win_class_vip_", model_name, ".png")
-    logger::log_info("\n\nSaving Variable Importance plot:\n{vip_path}")
+    resample_plot_path  <-   paste0(ml_data_path, "plots/win_class_resample_aucroc_", model_name, ".png")
+    logger::log_info("\n\nSaving Resamples AUC-ROC curve: \n{resample_plot_path}")
 
     # Export plot
     ggsave(
-      vip_path,
-      plot   = vip_plot
+      resample_plot_path,
+      plot   = resample_roc_plot
     )
-  },
-  error = function(e) {
-    logger::log_error('Variable Importance is not avalaible for {model_name} model')
-    logger::log_error('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
-    logger::log_error(message(e))
-    # stop()
-  }
-)
+
+    # Plot variable importance if avaliable for model
+    tryCatch(
+      {
+        vip_plot <-
+        mod_last_fit %>%
+          pluck(".workflow", 1) %>%
+          extract_fit_parsnip() %>%
+          # vip::vi()
+          # vip::vip() +
+          vip::vip(num_features = 70) +
+          # vip::vip(num_features = 30) +
+          labs(
+            title    = paste0("Variable Importance Scores - ", model_name),
+            subtitle = "Regression",
+            y        = "Importance",
+            x        = "Variables"
+          )
+
+        # save ROC AUC plot to "aw-poudre-2020/dflow/boatable_day_plots/
+        vip_path  <-   paste0(ml_data_path, "plots/win_class_vip_", model_name, ".png")
+        logger::log_info("\n\nSaving Variable Importance plot:\n{vip_path}")
+
+        # Export plot
+        ggsave(
+          vip_path,
+          plot   = vip_plot
+        )
+      },
+      error = function(e) {
+        logger::log_error('Variable Importance is not avalaible for {model_name} model')
+        logger::log_error('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
+        logger::log_error(message(e))
+        # stop()
+      }
+    )
 
 }
 
