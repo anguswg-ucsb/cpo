@@ -24,10 +24,7 @@ dists <- c(
 
 out_df <-
   mod_df %>%
-  # dplyr::filter(district %in% dists) %>%
-  # dplyr::filter(seniority != "median") %>%
   dplyr::mutate(
-    # median_date = mean(as.Date(approp_date))
     month = lubridate::month(date),
     seniority = dplyr::case_when(
       seniority %in% c("median") & as.Date(approp_date) >= "1930-01-01" ~ "junior",
@@ -38,12 +35,8 @@ out_df <-
   dplyr::filter(month %in% c(5, 6, 7, 8, 9)) %>%
   na.omit() %>%
   dplyr::select(basin, seniority, date, out_pct, pr, tmmn, tmmx, eddi1y, contains("swe"))  %>%
-  # dplyr::select(basin, seniority, out_pct, pr, tmmn, tmmx, spi1y, contains("eddi"),  contains("swe"))  %>%
-  # dplyr::mutate(dplyr::across(where(is.numeric), round, 4))
+
   dplyr::mutate(dplyr::across(where(is.numeric), \(x) round(x, 4))) %>%
-  # dplyr::select(basin, district, date, wdid, gnis_id, approp_date, seniority, out_pct, pr, tmmn, tmmx, contains("eddi"), contains("swe"))
-  # dplyr::select(-month)
-  # dplyr::select(-month, -wdid, -gnis_id, -district) %>%
   dplyr::mutate(
     out_pct = dplyr::case_when(
       out_pct > 0 ~ "1",
@@ -66,9 +59,8 @@ out_lst <-
 set.seed(234)
 
 # split data for train/test, stratify by quantiles of fantasy points
-# nfl_split <- initial_split(nfl_df, strata = season)
-# out_split <- rsample::initial_split(out_df, strata = seniority)
 out_split <- rsample::initial_split(out_lst[[6]], strata = seniority)
+# out_split <- rsample::initial_split(out_df, strata = seniority)
 
 # training data split
 out_train <- rsample::training(out_split)
@@ -106,11 +98,6 @@ out_test %>%
 # ---- Recipes ----
 # *****************
 
-usemodels::use_ranger(out_pct~., data = out_train)
-usemodels::use_glmnet(out_pct~., data = out_train)
-usemodels::use_kknn(out_pct~., data = out_train)
-usemodels::use_xgboost(out_pct~., data = out_train)
-
 # Data preprocessing
 logger::log_info("Data preprocessing...")
 
@@ -131,11 +118,6 @@ glmnet_recipe <-
   # recipes::step_date(date) %>%
   recipes::step_zv(recipes::all_predictors()) %>%
   recipes::step_normalize(recipes::all_numeric_predictors())
-
-# tmp <-
-#   glmnet_recipe %>%
-#   recipes::prep() %>%
-#   recipes::bake(new_data = NULL)
 
 # Ranger Random forest recipe
 ranger_recipe <-
@@ -182,7 +164,11 @@ xgboost_recipe <-
   # themis::step_smote(nfl_finish) %>%
   step_zv(all_predictors())
 
-# # GLMNET model specifications
+# ------------------------------
+# ---- Model specifications ----
+# ------------------------------
+
+# # # GLMNET model specifications - regression
 # glmnet_spec <-
 #   parsnip::linear_reg(
 #     penalty = tune::tune(),
@@ -190,36 +176,27 @@ xgboost_recipe <-
 #     ) %>%
 #   parsnip::set_mode("regression") %>%
 #   parsnip::set_engine("glmnet")
-
-# GLMNET model specifications
-glmnet_spec <-
-  parsnip::logistic_reg(
-    penalty = tune::tune(),
-    mixture = tune::tune()
-  ) %>%
-  parsnip::set_mode("classification") %>%
-  parsnip::set_engine("glmnet")
-
-
-# ranger RF model specifications
-ranger_spec <-
-  parsnip::rand_forest(
-    mtry  = tune::tune(),
-    min_n = tune::tune(),
-    trees = 1000
-    ) %>%
-  parsnip::set_mode("regression") %>%
-  parsnip::set_engine("ranger", importance = "permutation")
-
-# K nearest neighbors
-kknn_spec <-
-  parsnip::nearest_neighbor(
-    neighbors   = tune::tune(),
-    weight_func = tune::tune()
-    ) %>%
-  parsnip::set_mode("regression") %>%
-  parsnip::set_engine("kknn")
-
+#
+# # ranger RF model specifications
+# ranger_spec <-
+#   parsnip::rand_forest(
+#     mtry  = tune::tune(),
+#     min_n = tune::tune(),
+#     trees = 1000
+#     ) %>%
+#   parsnip::set_mode("regression") %>%
+#   parsnip::set_engine("ranger", importance = "permutation")
+#
+# # K nearest neighbors
+# kknn_spec <-
+#   parsnip::nearest_neighbor(
+#     neighbors   = tune::tune(),
+#     weight_func = tune::tune()
+#     ) %>%
+#   parsnip::set_mode("regression") %>%
+#   parsnip::set_engine("kknn")
+#
+# # xgboost model - regression
 # xgboost_spec <-
 #   boost_tree(
 #     trees = tune(),
@@ -231,6 +208,7 @@ kknn_spec <-
 #   set_mode("regression") %>%
 #   parsnip::set_engine("xgboost", importance = "permutation")
 
+# xgboost model - classification
 xgboost_spec <-
   boost_tree(
     trees = tune(),
@@ -241,6 +219,15 @@ xgboost_spec <-
     sample_size = tune()) %>%
   set_mode("classification") %>%
   parsnip::set_engine("xgboost", importance = "permutation")
+
+# GLMNET model specifications classification
+glmnet_spec <-
+  parsnip::logistic_reg(
+    penalty = tune::tune(),
+    mixture = tune::tune()
+  ) %>%
+  parsnip::set_mode("classification") %>%
+  parsnip::set_engine("glmnet")
 
 # ********************************
 # ---- Cross Validation folds ----
