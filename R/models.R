@@ -23,17 +23,18 @@ dists <- c(
 
 out_df <-
   mod_df %>%
+  dplyr::filter(seniority != "median") %>%
   dplyr::mutate(
-    month = lubridate::month(date),
-    seniority = dplyr::case_when(
-      seniority %in% c("median") & as.Date(approp_date) >= "1930-01-01" ~ "junior",
-      seniority %in% c("median") & as.Date(approp_date) < "1930-01-01"  ~ "senior",
-      TRUE                                                              ~ seniority
-    )
+    month = lubridate::month(date)
+    # seniority = dplyr::case_when(
+    #   seniority %in% c("median") & as.Date(approp_date) >= "1930-01-01" ~ "junior",
+    #   seniority %in% c("median") & as.Date(approp_date) < "1930-01-01"  ~ "senior",
+    #   TRUE                                                              ~ seniority
+    # )
   ) %>%
   dplyr::filter(month %in% c(5, 6, 7, 8, 9)) %>%
   na.omit() %>%
-  dplyr::select(basin, seniority, date, out, pr, tmmn, tmmx, eddi1y, swe, mar_swe, apr_swe, may_swe)  %>%
+  dplyr::select(basin, seniority, date, out, pr, tmmn, tmmx, spi90d, spi1y, eddi90d, eddi1y, swe, mar_swe, apr_swe, may_swe, swe_lag_5_month)  %>%
   # dplyr::select(basin, seniority, date, out_pct, pr, tmmn, tmmx, eddi1y, swe, mar_swe, apr_swe, may_swe)  %>%
   # dplyr::select(basin, seniority, date, out_pct, pr, tmmn, tmmx, eddi1y, contains("swe"))  %>%
   dplyr::mutate(dplyr::across(where(is.numeric), \(x) round(x, 4))) %>%
@@ -56,9 +57,8 @@ final_vip_rank_lst <- list()
 
 # Final Metrics list
 final_metric_lst   <- list()
-# i = 2
 
-for (i in 1:length(district_df)) {
+for (i in 1:length(out_lst)) {
 
   basin_name <-    out_lst[[i]]$basin[1]
 
@@ -133,15 +133,6 @@ for (i in 1:length(district_df)) {
     step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
     themis::step_smote(out_pct) %>%
     step_zv(all_predictors())
-
-  # juice(prep(norm_recipe))
-
-  # # Remove correlated variables recipe
-  # corr_recipe <-
-  #   lasso_recipe %>%
-  #   step_corr(all_numeric_predictors(), threshold = .5) %>%
-  #   step_zv(all_predictors()) %>%
-  #   step_normalize(all_numeric_predictors())
 
   # ---- Specs ----
   logger::log_info("Specifiying LASSO model\nMixture = 1")
@@ -541,10 +532,6 @@ saveRDS(
 )
 
 
-
-
-
-
     # Set random seed
     set.seed(234)
 
@@ -557,32 +544,6 @@ saveRDS(
 
     # testinng data split
     out_test  <- rsample::testing(out_split)
-
-    # out_train %>%
-    #   count(seniority)
-    #
-    # out_train %>%
-    #   count(seniority) %>%
-    #   dplyr::mutate(
-    #     total_games = sum(n, na.rm = T),
-    #     pct_total   = 100*(n/total_games)
-    #   ) %>%
-    #   ggplot() +
-    #   geom_col(aes(x = seniority, y = pct_total)) +
-    #   scale_y_continuous(limits = c(0, 100))
-    #
-    # out_test %>%
-    #   count(seniority)
-
-    # out_test %>%
-    #   count(seniority) %>%
-    #   dplyr::mutate(
-    #     total_games = sum(n, na.rm = T),
-    #     pct_total   = 100*(n/total_games)
-    #   ) %>%
-    #   ggplot() +
-    #   geom_col(aes(x = seniority, y = pct_total)) +
-    #   scale_y_continuous(limits = c(0, 100))
 
     # *****************
     # ---- Recipes ----
@@ -677,16 +638,7 @@ saveRDS(
     #     ) %>%
     #   parsnip::set_mode("regression") %>%
     #   parsnip::set_engine("ranger", importance = "permutation")
-    #
-    # # K nearest neighbors
-    # kknn_spec <-
-    #   parsnip::nearest_neighbor(
-    #     neighbors   = tune::tune(),
-    #     weight_func = tune::tune()
-    #     ) %>%
-    #   parsnip::set_mode("regression") %>%
-    #   parsnip::set_engine("kknn")
-    #
+
     # # # xgboost model - regression
     # xgboost_spec <-
     #   boost_tree(
