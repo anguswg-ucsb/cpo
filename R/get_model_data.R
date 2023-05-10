@@ -67,7 +67,15 @@ if(file.exists(model_data_path)) {
             swe = impute_mean(swe)
         ) %>%
         dplyr::ungroup() %>%
-        dplyr::select(-month)
+        dplyr::select(-month) %>%
+        dplyr::mutate(
+            out = dplyr::case_when(
+                out_pct > 0 ~ "1",
+                TRUE        ~ "0"
+            ),
+            out = factor(out, levels = c("1", "0"))
+        ) %>%
+        dplyr::relocate(out, .after = out_pct)
 
     message(paste0(
         "Saving model data: ",

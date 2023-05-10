@@ -277,6 +277,45 @@ get_snotel <- function(
   #   dplyr::select(-year) %>%
   #   dplyr::ungroup()
 
+  # tmp
+  peaks <-
+    snotel_df %>%
+    dplyr::mutate(
+      month = lubridate::month(date, label = T),
+      year  = lubridate::year(date)
+    ) %>%
+    dplyr::group_by(basin, month, year) %>%
+    dplyr::summarise(
+      peak_swe = round(max(swe, na.rm = T), 4)
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::filter(month %in% c("Mar", "Apr", "May")) %>%
+    na.omit() %>%
+    dplyr::group_by(basin, year) %>%
+    tidyr::pivot_wider(
+      id_cols     = c(basin, year),
+      names_from  = month,
+      values_from = peak_swe
+    ) %>%
+    dplyr::ungroup()
+
+  names(peaks) <- c("basin", "year",
+                    c(paste0(tolower(names(peaks))[!grepl("basin|year", tolower(names(peaks)))], "_swe"))
+                    )
+
+  snotel_df <-
+    snotel_df %>%
+    dplyr::mutate(
+      year  = lubridate::year(date)
+    ) %>%
+    dplyr::left_join(
+      peaks,
+      by = c("basin", "year")
+    ) %>%
+    dplyr::relocate(basin, date, swe, mar_swe, apr_swe, may_swe) %>%
+    dplyr::select(-year)
+
+
   return(snotel_df)
 
 }
