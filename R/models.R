@@ -377,10 +377,6 @@ result_summary <- function(
       wfs %>%
       extract_workflow(mod_recipe)
 
-    # print(select_best(mod_results, metric = "rsq"))
-    # print(select_best(mod_results, metric = "rmse"))
-
-
     logger::log_info("Fitting final model...\nPreprocessor: {mod_recipe}")
 
     met = ifelse(model_type == "classification", "roc_auc", "rsq")
@@ -530,6 +526,7 @@ result_summary <- function(
         # stop()
       }
     )
+
     # # Train metrics
     # train_metrics <-
     #   mod_train %>%
@@ -563,7 +560,7 @@ result_summary <- function(
     metrics_df          <- bind_rows(train_metrics, test_metrics)
 
   })
-  1:length(wfs$wflow_id)
+
   reg_metrics_lst <- list()
   vip_lst         <- list()
   vip_rank_lst    <- list()
