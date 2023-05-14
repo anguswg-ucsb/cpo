@@ -349,6 +349,7 @@ result_summary <- function(
     split_data,
     save_path
     )
+
   # Table of model ranks
   mod_rank <- rank_results(wfs)
   # train_data = out_train
@@ -356,10 +357,12 @@ result_summary <- function(
   # split_data = out_split
 
   fit_mods <- lapply(1:length(wfs$wflow_id), function(z) {
+
     # z = 1
+    message("Summarizing model ", z, "/", length(wfs$wflow_id))
 
     mod_recipe     <- wfs$wflow_id[z]
-
+    simple_name <- sub(".+_", "", mod_recipe)
     # relative model rankings
     min_rank <- min(filter(mod_rank, wflow_id == mod_recipe)$rank)
     max_rank <- max(filter(mod_rank, wflow_id == mod_recipe)$rank)
@@ -396,22 +399,22 @@ result_summary <- function(
 
     logger::log_info("Collecting final metrics...")
 
-    # Resampled CV Fold AUC ROC Curve0-1 <-
-    roc_plot <-
-      mod_results %>%
-      collect_predictions() %>%
-      group_by(id) %>%
-      roc_curve(out, .pred_1) %>%
-      ggplot(aes(1 - specificity, sensitivity, color = id)) +
-      geom_abline(lty = 2, color = "gray80", size = 1.5) +
-      geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
-      coord_equal() +
-      labs(
-        title    = paste0("AUC-ROC Curve - ", model_name, "(", mod_recipe, ")"),
-        subtitle = "Resample results from 10 Fold Cross Validation",
-        x        = "1 - Specificity",
-        y        = "Sensitivity"
-      )
+    # # Resampled CV Fold AUC ROC Curve0-1 <-
+    # roc_plot <-
+    #   mod_results %>%
+    #   collect_predictions() %>%
+    #   group_by(id) %>%
+    #   roc_curve(out, .pred_1) %>%
+    #   ggplot(aes(1 - specificity, sensitivity, color = id)) +
+    #   geom_abline(lty = 2, color = "gray80", size = 1.5) +
+    #   geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
+    #   coord_equal() +
+    #   labs(
+    #     title    = paste0("AUC-ROC Curve - ", model_name, "(", mod_recipe, ")"),
+    #     subtitle = "Resample results from 10 Fold Cross Validation",
+    #     x        = "1 - Specificity",
+    #     y        = "Sensitivity"
+    #   )
 
     # training set predictions
     mod_train <-
@@ -423,6 +426,12 @@ result_summary <- function(
       predict(mod_final_fit, test_data) %>%
       bind_cols(dplyr::select(test_data, out))
 
+    final_lst = c(
+      "training"            = mod_train,
+      "testing"             = mod_test,
+      "variable_importance" = vip_table
+    )
+
     if(model_type == "classification") {
 
       multi_metric <- yardstick::metric_set(roc_auc, pr_auc, accuracy)
@@ -432,95 +441,150 @@ result_summary <- function(
       multi_metric <- yardstick::metric_set(rmse, rsq, mae)
     }
 
-    est = ifelse(model_type == "classification", ".pred_class", ".pred")
+    # est = ifelse(model_type == "classification", ".pred_class", ".pred")
 
-    # Variable importance dataframe
-    vip_table <-
-      mod_last_fit %>%
-      pluck(".workflow", 1) %>%
-      extract_fit_parsnip() %>%
-      vip::vi() %>%
-      mutate(
-        model          = "lasso_regression",
-        recipe         = clean_rec_name,
-        min_model_rank = min_rank,
-        max_model_rank = max_rank,
-        basin          = basin_name
-      )
+    # Plot variable importance if avaliable for model
+    tryCatch(
+      {
+        # Variable importance dataframe
+        vip_table <-
+          mod_last_fit %>%
+          pluck(".workflow", 1) %>%
+          extract_fit_parsnip() %>%
+          vip::vi() %>%
+          mutate(
+            model_type     = model_type,
+            recipe         = clean_rec_name,
+            min_model_rank = min_rank,
+            max_model_rank = max_rank,
+            basin          = basin_name
+          )
+      },
+      error = function(e) {
+        logger::log_error('Variable Importance is not avalaible for {simple_name} - {model_type}')
+        logger::log_error('Setting vip_table to NULL')
+        logger::log_error('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
+        logger::log_error(message(e))
 
-    vip_lst[[z]] <- vip_table
+        vip_table <- NULL
 
-    # Variable importance dataframe
-    vip_rank_table <-
-      mod_last_fit %>%
-      pluck(".workflow", 1) %>%
-      extract_fit_parsnip() %>%
-      vip::vi(rank = T) %>%
-      mutate(
-        model          = "lasso_regression",
-        recipe         = clean_rec_name,
-        min_model_rank = min_rank,
-        max_model_rank = max_rank,
-        basin          = basin_name
-      )
+      }
+    )
+    # # Variable importance dataframe
+    # vip_table <-
+    #   mod_last_fit %>%
+    #   pluck(".workflow", 1) %>%
+    #   extract_fit_parsnip() %>%
+    #   vip::vi() %>%
+    #   mutate(
+    #     model_type     = model_type,
+    #     recipe         = clean_rec_name,
+    #     min_model_rank = min_rank,
+    #     max_model_rank = max_rank,
+    #     basin          = basin_name
+    #   )
 
-    vip_rank_lst[[z]] <- vip_rank_table
+    # final data outputs
+    final_lst = list(
+      "training"            = mod_train,
+      "testing"             = mod_test,
+      "variable_importance" = vip_table,
+      "model_results"       = mod_results,
+      "last_fit"            = mod_last_fit,
+      "final_fit"           = mod_final_fit
+    )
 
-    # Resampled CV Fold AUC ROC Curve0-1 <-
-    mod_results %>%
-      collect_predictions() %>%
-      group_by(id) %>%
-      roc_curve(out_pct, .pred_1) %>%
-      ggplot(aes(1 - specificity, sensitivity, color = id)) +
-      geom_abline(lty = 2, color = "gray80", size = 1.5) +
-      geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
-      coord_equal() +
-      labs(
-        title    = paste0("AUC-ROC Curve - ", model_name),
-        subtitle = "Resample results from 10 Fold Cross Validation",
-        x        = "1 - Specificity",
-        y        = "Sensitivity"
-      )
-    # # save ROC AUC plot to "aw-poudre-2020/dflow/boatable_day_plots/
-    # resample_plot_path  <-   paste0(ml_data_path, "plots/win_class_resample_aucroc_", model_name, ".png")
-    # logger::log_info("\n\nSaving Resamples AUC-ROC curve: \n{resample_plot_path}")
-    #
-    # # Export plot
-    # ggsave(
-    #   resample_plot_path,
-    #   plot   = resample_roc_plot
-    # )
+    # Plot variable importance if avaliable for model
+    tryCatch(
+      {
+
+      # Resampled CV Fold AUC ROC Curve0-1 <-
+      roc_plot <-
+        mod_results %>%
+        collect_predictions() %>%
+        group_by(id) %>%
+        roc_curve(out, .pred_1) %>%
+        ggplot(aes(1 - specificity, sensitivity, color = id)) +
+        geom_abline(lty = 2, color = "gray80", size = 1.5) +
+        geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
+        coord_equal() +
+        labs(
+          title    = paste0("AUC-ROC Curve - ", model_name),
+          subtitle = "Resample results from 10 Fold Cross Validation",
+          x        = "1 - Specificity",
+          y        = "Sensitivity"
+        )
+
+        # # save ROC AUC plot to "aw-poudre-2020/dflow/boatable_day_plots/
+        # vip_path  <-   paste0(ml_data_path, "plots/win_class_vip_", model_name, ".png")
+        logger::log_info('\n\nSaving ROC AUC Importance plot:\n{paste0(
+                          save_path,
+                          tolower(gsub("[[:punct:][:blank:]]+", "_",  model_name)),
+                          # ifelse(model_type == "classification", "_class_", "_reg_"),
+                               "_", simple_name,
+                          "_roc_auc.plot"
+                          )}')
+
+        # Export plot
+        ggplot2::ggsave(
+          paste0(
+            save_path,
+            tolower(gsub("[[:punct:][:blank:]]+", "_",  model_name)),
+            "_", simple_name,
+            # ifelse(model_type == "classification", "_class_", "_reg_"),
+            "_roc_auc_plot.png"
+          ),
+          plot   = roc_plot
+        )
+      },
+      error = function(e) {
+        logger::log_error('ROC AUC not avalaible for {simple_name} - {model_type}')
+        logger::log_error('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
+        logger::log_error(message(e))
+        # stop()
+      }
+    )
 
     # Plot variable importance if avaliable for model
     tryCatch(
       {
         vip_plot <-
           mod_last_fit %>%
-          pluck(".workflow", 1) %>%
+          purrr::pluck(".workflow", 1) %>%
           extract_fit_parsnip() %>%
-          # vip::vi()
-          # vip::vip() +
           vip::vip(num_features = 70) +
-          # vip::vip(num_features = 30) +
           labs(
             title    = paste0("Variable Importance Scores - ", model_name),
-            subtitle = "Regression",
+            subtitle = paste0(simple_name, " - ", model_type),
             y        = "Importance",
             x        = "Variables"
           )
 
         # save ROC AUC plot to "aw-poudre-2020/dflow/boatable_day_plots/
-        vip_path  <-   paste0(ml_data_path, "plots/win_class_vip_", model_name, ".png")
-        logger::log_info("\n\nSaving Variable Importance plot:\n{vip_path}")
+        # vip_path  <-   paste0(ml_data_path, "plots/win_class_vip_", model_name, ".png")
+        logger::log_info('\n\nSaving Variable Importance plot:\n{paste0(
+            save_path,
+            tolower(gsub("[[:punct:][:blank:]]+", "_",  model_name)),
+            "_", simple_name,
+            ifelse(model_type == "classification", "_class_", "_reg_"),
+            "vip_plot.png"
+          )}')
 
         # Export plot
-        ggsave(
-          vip_path,
+        ggplot2::ggsave(
+          paste0(
+            save_path,
+            tolower(gsub("[[:punct:][:blank:]]+", "_",  model_name)),
+            "_", simple_name,
+            ifelse(model_type == "classification", "_class_", "_reg_"),
+            "vip_plot.png"
+          ),
           plot   = vip_plot
         )
+
       },
       error = function(e) {
-        logger::log_error('Variable Importance is not avalaible for {model_name} model')
+        logger::log_error('Variable Importance is not avalaible for {simple_name} - {model_type}')
         logger::log_error('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
         logger::log_error(message(e))
         # stop()
