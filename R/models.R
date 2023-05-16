@@ -34,12 +34,14 @@ out_df <-
   ) %>%
   dplyr::filter(month %in% c(5, 6, 7, 8, 9)) %>%
   na.omit() %>%
-  dplyr::select(basin, seniority, date, out, pr, tmmn, tmmx, spi90d, spi1y, eddi90d, eddi1y, swe, mar_swe, apr_swe, may_swe, swe_lag_5_month)  %>%
+  dplyr::select(basin, seniority, date, out_pct, out,
+                pr, tmmn, tmmx, spi90d, spi1y, eddi90d, eddi1y,
+                swe, mar_swe, apr_swe, may_swe, swe_lag_5_month)  %>%
   # dplyr::select(basin, seniority, date, out_pct, pr, tmmn, tmmx, eddi1y, swe, mar_swe, apr_swe, may_swe)  %>%
   # dplyr::select(basin, seniority, date, out_pct, pr, tmmn, tmmx, eddi1y, contains("swe"))  %>%
   dplyr::mutate(dplyr::across(where(is.numeric), \(x) round(x, 4))) %>%
-  dplyr::select(-date) %>%
-  dplyr::rename(out_pct = out)
+  dplyr::select(-date)
+  # dplyr::rename(out_pct = out)
 
 out_lst <-
   out_df %>%
@@ -49,16 +51,58 @@ out_lst <-
 make_models <- function(
     df         = NULL,
     target_var = NULL,
+    basin_name = NULL,
     model_type = "classification",
     strata     = NULL,
     nfolds     = 10,
     ncores     = 6,
     save_path  = NULL
 ) {
-  # df <- df %>% rename(!!new_colname := !!target_var)
 
+  # model_type = "regression"
+  # df <- df %>% rename(!!new_colname := !!target_var)
+  df         = out_lst[[i]]
+  # rm(df2)
+  # df2 <- df %>%
+  #   dplyr::filter(!duplicated(.))
+
+  target_var = "out"
+  model_type = "classification"
+  # target_var = "out_pct"
+  # model_type = "regression"
+  basin_name = basin_name
+  strata     = "seniority"
+  nfolds     = 5
+  ncores     = 6
+  save_path  = paste0("D:/cpo/models/")
+
+  if(model_type == "classification") {
+
+    df <-
+      df %>%
+      dplyr::select(-out_pct) %>%
+      dplyr::rename( out := !!target_var) %>%
+      dplyr::filter(!duplicated(.))
+
+  } else {
+
+    df <-
+      df %>%
+      dplyr::select(-out) %>%
+      dplyr::rename( out := !!target_var) %>%
+      dplyr::filter(!duplicated(.))
+
+  }
+  # df %>%
+  #   dplyr::select()
+  # save_path  = paste0(
+  #   "D:/cpo/models/workflowsets/",
+  #   tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name)),
+  #   "_class_",
+  #   "workflowset.rds"
+  #   )
   # rename target variable column to "out"
-  df <- dplyr::rename(df, out := !!target_var)
+  # df <- dplyr::rename(df, out := !!target_var)
 
   # Model fit path
   # save_path <- "D:/cpo/models/workflowsets/"
@@ -113,13 +157,9 @@ make_models <- function(
     ) %>%
     recipes::step_string2factor(one_of( "seniority")) %>%
     recipes::step_novel(recipes::all_nominal_predictors()) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
-    # recipes::step_date(date) %>%
-    themis::step_smote(out) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_normalize(recipes::all_numeric_predictors())
+    recipes::step_dummy(recipes::all_nominal_predictors())
 
-  # XGBoost trees
+  # # # XGBoost trees
   xgboost_recipe <-
     recipes::recipe(
       formula = out ~ .,
@@ -131,9 +171,55 @@ make_models <- function(
     ) %>%
     recipes::step_string2factor(one_of("seniority")) %>%
     recipes::step_novel(recipes::all_nominal_predictors()) %>%
-    recipes::step_dummy(recipes::all_nominal_predictors(), one_hot = TRUE) %>%
-    themis::step_smote(out) %>%
-    recipes::step_zv(recipes::all_predictors())
+    recipes::step_dummy(recipes::all_nominal_predictors(), one_hot = TRUE)
+
+  if (model_type == "classification") {
+
+    # recipes::step_date(date) %>%
+    glmnet_recipe <-
+      glmnet_recipe %>%
+      themis::step_smote(out) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_numeric_predictors())
+
+    xgboost_recipe <-
+      xgboost_recipe %>%
+      themis::step_smote(out) %>%
+      recipes::step_zv(recipes::all_predictors())
+    #
+  } else {
+
+    # recipes::step_date(date) %>%
+    glmnet_recipe <-
+      glmnet_recipe %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_numeric_predictors())
+
+    xgboost_recipe <-
+      xgboost_recipe %>%
+      recipes::step_zv(recipes::all_predictors())
+
+  }
+    # # recipes::step_date(date) %>%
+    # themis::step_smote(out) %>%
+    # recipes::step_zv(recipes::all_predictors()) %>%
+    # recipes::step_normalize(recipes::all_numeric_predictors())
+
+  # # XGBoost trees
+  # xgboost_recipe <-
+  #   recipes::recipe(
+  #     formula = out ~ .,
+  #     data    = out_train
+  #   ) %>%
+  #   recipes::update_role(
+  #     basin,
+  #     new_role = "ID"
+  #   ) %>%
+  #   recipes::step_string2factor(one_of("seniority")) %>%
+  #   recipes::step_novel(recipes::all_nominal_predictors()) %>%
+  #   recipes::step_dummy(recipes::all_nominal_predictors(), one_hot = TRUE) %>%
+  #   themis::step_smote(out) %>%
+  #   recipes::step_zv(recipes::all_predictors())
 
   # ------------------------------
   # ---- Model specifications ----
@@ -228,7 +314,7 @@ make_models <- function(
 
   } else if (model_type == "regression") {
 
-    my_metrics <- yardstick::metric_set(rsq, rmse, mae)
+    my_metrics <- yardstick::metric_set(rsq, rmse)
 
   }
 
@@ -267,16 +353,53 @@ make_models <- function(
 
   logger::log_info("Tuning complete!")
 
+  results <- extract_results(
+    wfs        = out_wfs,
+    basin_name = basin_name,
+    model_type = model_type,
+    train_data = out_train,
+    test_data  = out_test,
+    split_data = out_split
+
+  )
+
   # Model fit path
   # save_path <- "D:/cpo/models/workflowsets/"
+  # save_path  = paste0("D:/cpo/models/")
+  wfs_dir  <- paste0(save_path, "workflowsets/")
+  out_path <- paste0(
+                  wfs_dir,
+                  tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name)),
+                  "_class_",
+                  "workflowset.rds"
+                )
 
-  logger::log_info("Saving workflowset:\n{save_path}")
+  # checking if workflowset/ directory exists, and if not, creates one
+  if(!dir.exists(wfs_dir)) {
+    logger::log_info("Creating workflowset directory:\n--> {out_dir}")
 
-  # Save Workflows/Resample results/Final fitted model
-  saveRDS(
-    out_wfs,
-    save_path
-  )
+    dir.create(wfs_dir)
+
+    logger::log_info("Saving workflowset:\n--> {out_path}")
+
+    # Save Workflows/Resample results/Final fitted model
+    saveRDS(
+      out_wfs,
+      out_path
+    )
+
+  } else {
+
+    logger::log_info("Saving workflowset:\n--> {out_path}")
+
+    # Save Workflows/Resample results/Final fitted model
+    saveRDS(
+      out_wfs,
+      out_path
+    )
+
+  }
+
 
   return(out_wfs)
 
@@ -340,6 +463,351 @@ make_comp_plot <- function(
   return(mod_comp_plot)
 }
 
+extract_results <- function(
+    wfs,
+    basin_name,
+    model_type,
+    train_data,
+    test_data,
+    split_data,
+    save_path
+) {
+
+  # train_data = out_train
+  # test_data = out_test
+  # split_data = out_split
+  # wfs        = out_wfs
+  # basin_name = basin_name
+  # model_type = model_type
+  # wfs        = out_wfs
+  # basin_name = basin_name
+  # model_type = model_type
+  # train_data = out_train
+  # test_data  = out_test
+  # split_data = out_split
+
+  # Table of model ranks
+  mod_rank <- workflowsets::rank_results(wfs)
+  # z = 1
+  # iterate through models in workflowsets and extract metrics and make predictions
+  fit_mods <- lapply(1:length(wfs$wflow_id), function(z) {
+
+    message("Summarizing model ", z, "/", length(wfs$wflow_id))
+
+    # recipe name
+    mod_recipe     <- wfs$wflow_id[z]
+    # mode
+    # relative model rankings
+    min_rank <- min(dplyr::filter(mod_rank, wflow_id == mod_recipe)$rank)
+    max_rank <- max(dplyr::filter(mod_rank, wflow_id == mod_recipe)$rank)
+
+    # make clean names
+    clean_rec_name <- paste0(mod_recipe, "_", ifelse(model_type == "classification", "class", "reg"))
+    simple_name    <- sub(".+_", "", mod_recipe)
+
+    # extract workflow set results for recipe
+    mod_results <- workflowsets::extract_workflow_set_result(wfs, mod_recipe)
+
+    # Extract workflows
+    mod_workflow <- extract_workflow(wfs, mod_recipe)
+
+    logger::log_info("Fitting final model...\nPreprocessor: {mod_recipe}")
+
+    met = ifelse(model_type == "classification", "roc_auc", "rsq")
+
+    # Finalize workflow fit
+    mod_workflow_fit <-
+      mod_workflow %>%
+      tune::finalize_workflow(tune::select_best(mod_results, metric = met)) %>%
+      fit(data = train_data)
+
+    # Fit model to split train/test data
+    mod_last_fit <- tune::last_fit(mod_workflow_fit, split_data)
+
+    # Extract & save final fit to use for predictions
+    mod_final_fit <- mod_last_fit$.workflow[[1]]
+
+    logger::log_info("Collecting training data predictions...")
+
+    if(model_type == "classification") {
+
+      # training set predictions
+      mod_train <-
+        predict(mod_final_fit, train_data) %>%
+        bind_cols(predict(mod_final_fit, train_data, type = "prob")) %>%
+        dplyr::bind_cols(dplyr::select(train_data, out)) # Add the true outcome data back in
+
+
+    } else {
+
+      # training set predictions
+      mod_train <-
+        predict(mod_final_fit, train_data) %>%
+        dplyr::bind_cols(dplyr::select(train_data, out)) # Add the true outcome data back in
+
+    }
+
+    logger::log_info("Collecting testing data predictions...")
+
+    if(model_type == "classification") {
+
+      # testing set predictions
+      mod_test <-
+        predict(mod_final_fit, test_data) %>%
+        bind_cols(predict(mod_final_fit, test_data, type = "prob")) %>%
+        dplyr::bind_cols(dplyr::select(test_data, out))
+
+    } else {
+
+      # testing set predictions
+      mod_test <-
+        predict(mod_final_fit, test_data) %>%
+        dplyr::bind_cols(dplyr::select(test_data, out))
+    }
+
+    if(model_type == "classification") {
+
+      multi_metric <- yardstick::metric_set(roc_auc, pr_auc, accuracy)
+
+    } else if(model_type == "regression") {
+
+      multi_metric <- yardstick::metric_set(rmse, rsq, mae)
+    }
+
+    # est = ifelse(model_type == "classification", ".pred_class", ".pred")
+
+    # Plot variable importance if avaliable for model
+    tryCatch(
+      {
+        logger::log_info("Collecting variable importance...")
+
+        # Variable importance dataframe
+        vip_table <-
+          mod_last_fit %>%
+          purrr::pluck(".workflow", 1) %>%
+          extract_fit_parsnip() %>%
+          vip::vi() %>%
+          dplyr::mutate(
+            model_type     = model_type,
+            recipe         = clean_rec_name,
+            min_model_rank = min_rank,
+            max_model_rank = max_rank,
+            basin          = basin_name
+          )
+      },
+      error = function(e) {
+        logger::log_error('Variable Importance is not avalaible for {simple_name} - {model_type}')
+        logger::log_error('Setting vip_table to NULL')
+        logger::log_error('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
+        logger::log_error(message(e))
+
+        vip_table <- NULL
+
+      }
+    )
+
+    # # Train metrics
+    # train_metrics <-
+    #   mod_train %>%
+    #   multi_metric(truth = out, estimate = .pred) %>%
+    #   mutate(
+    #     data           = "train",
+    #     model          = mod_recipe,
+    #     recipe         = clean_rec_name,
+    #     min_model_rank = min_rank,
+    #     max_model_rank = max_rank,
+    #     basin          =  tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name))
+    #   )
+
+    # # Test metrics
+    # test_metrics <-
+    #   mod_test %>%
+    #   multi_metric(truth = out, estimate = .pred) %>%
+    #   mutate(
+    #     data           = "test",
+    #     model          = mod_recipe,
+    #     recipe         = clean_rec_name,
+    #     min_model_rank = min_rank,
+    #     max_model_rank = max_rank,
+    #     basin          =  tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name))
+    #   )
+
+    if(model_type == "classification") {
+
+      logger::log_info("Creating confusion matrix...")
+
+      cm <- yardstick::conf_mat(collect_predictions(mod_results), out, .pred_class)
+
+    } else {
+
+      cm <- NULL
+
+    }
+
+    if(model_type == "classification") {
+
+      logger::log_info("Calculating sensitivity/specificity metrics...")
+
+      metrics_df <- calc_class_metrics(
+        final_fit    = mod_final_fit,
+        fitted_train = mod_train,
+        fitted_test  = mod_test,
+        model_name   = clean_rec_name,
+        basin_name   = basin_name
+        )
+
+    } else {
+
+      metrics_df <- calc_reg_metrics(
+        final_fit    = mod_final_fit,
+        fitted_train = mod_train,
+        fitted_test  = mod_test,
+        model_name   = clean_rec_name,
+        basin_name   = basin_name
+      )
+
+    }
+
+
+    logger::log_info("Tidying model metrics... ")
+
+    # final data outputs
+    final_lst = list(
+      "training"            = mod_train,
+      "testing"             = mod_test,
+      "metrics"             = metrics_df,
+      "variable_importance" = vip_table,
+      "confusion_matrix"    = cm,
+      "model_results"       = mod_results,
+      "last_fit"            = mod_last_fit,
+      "final_fit"           = mod_final_fit
+    )
+
+    final_lst
+
+  }) %>%
+    stats::setNames(c(wfs$wflow_id))
+
+  return(fit_mods)
+
+}
+
+calc_class_metrics <- function(final_fit, fitted_train, fitted_test, model_name, basin_name) {
+
+  # # training set predictions
+  # mod_train <-
+  #   predict(final_fit, train_data) %>%
+  #   bind_cols(predict(final_fit, train_data, type = "prob")) %>%
+  #   bind_cols(dplyr::select(train_data, out)) # Add the true outcome data back in
+  #
+  # # testing set predictions
+  # mod_test <-
+  #   predict(final_fit, test_data) %>%
+  #   bind_cols(predict(final_fit, test_data, type = "prob")) %>%
+  #   bind_cols(dplyr::select(test_data, out))
+
+  # Train metrics
+  train_metrics <-
+    fitted_train %>%
+    yardstick::metrics(truth = out, estimate = .pred_class, .pred_1) %>%
+    dplyr::mutate(
+      data   = "train",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  # Test metrics
+  test_metrics <-
+    fitted_test %>%
+    yardstick::metrics(truth = out, estimate = .pred_class, .pred_1) %>%
+    dplyr::mutate(
+      data   = "test",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  sens_train <-
+    fitted_train %>%
+    yardstick::sens(truth = out, estimate = .pred_class) %>%
+    dplyr::mutate(
+      data   = "train",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  sens_test <-
+    fitted_test %>%
+    yardstick::sens(truth = out, estimate = .pred_class) %>%
+    dplyr::mutate(
+      data   = "test",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  spec_train <-
+    fitted_train %>%
+    yardstick::spec(truth = out, estimate = .pred_class)  %>%
+    dplyr::mutate(
+      data   = "train",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  spec_test <-
+    fitted_test %>%
+    yardstick::spec(truth = out, estimate = .pred_class) %>%
+    dplyr::mutate(
+      data   = "test",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  # Model train/test metrics
+  mod_metrics <- dplyr::bind_rows(
+    train_metrics, sens_train, spec_train,
+    test_metrics, sens_test, spec_test
+    ) %>%
+    dplyr::relocate(basin)
+
+  return(mod_metrics)
+}
+
+calc_reg_metrics <- function(final_fit, fitted_train, fitted_test, model_name, basin_name) {
+  # fitted_train = mod_train
+  # fitted_test = mod_test
+  # final_fit = mod_final_fit
+
+  # Train metrics
+  train_metrics <-
+    fitted_train %>%
+    yardstick::metrics(truth = out, estimate = .pred) %>%
+    dplyr::mutate(
+      data   = "train",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  # Test metrics
+  test_metrics <-
+    fitted_test %>%
+    yardstick::metrics(truth = out, estimate = .pred) %>%
+    dplyr::mutate(
+      data   = "test",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  # Model train/test metrics
+  mod_metrics <-
+    dplyr::bind_rows(
+      train_metrics,
+      test_metrics
+      ) %>%
+    dplyr::relocate(basin)
+
+  return(mod_metrics)
+}
+
 result_summary <- function(
     wfs,
     model_name,
@@ -348,7 +816,7 @@ result_summary <- function(
     test_data,
     split_data,
     save_path
-    )
+    ) {
 
   # Table of model ranks
   mod_rank <- rank_results(wfs)
@@ -356,7 +824,8 @@ result_summary <- function(
   # test_data = out_test
   # split_data = out_split
 
-  fit_mods <- lapply(1:length(wfs$wflow_id), function(z) {
+  # fit_mods <- lapply(1:length(wfs$wflow_id), function(z) {
+  fit_mods <- lapply(1:1, function(z) {
 
     # z = 1
     message("Summarizing model ", z, "/", length(wfs$wflow_id))
@@ -426,11 +895,11 @@ result_summary <- function(
       predict(mod_final_fit, test_data) %>%
       bind_cols(dplyr::select(test_data, out))
 
-    final_lst = c(
-      "training"            = mod_train,
-      "testing"             = mod_test,
-      "variable_importance" = vip_table
-    )
+    # final_lst = c(
+    #   "training"            = mod_train,
+    #   "testing"             = mod_test,
+    #   "variable_importance" = vip_table
+    # )
 
     if(model_type == "classification") {
 
@@ -483,16 +952,6 @@ result_summary <- function(
     #     max_model_rank = max_rank,
     #     basin          = basin_name
     #   )
-
-    # final data outputs
-    final_lst = list(
-      "training"            = mod_train,
-      "testing"             = mod_test,
-      "variable_importance" = vip_table,
-      "model_results"       = mod_results,
-      "last_fit"            = mod_last_fit,
-      "final_fit"           = mod_final_fit
-    )
 
     # Plot variable importance if avaliable for model
     tryCatch(
@@ -617,172 +1076,189 @@ result_summary <- function(
     #     basin          =  tolower(gsub("[[:punct:][:blank:]]+", "_",  model_name))
     #   )
 
+    logger::log_info("Creating confusion matrix...")
+
+    cm_out <-
+      mod_results %>%
+      collect_predictions()
+
+    cm <- yardstick::conf_mat(cm_out, out, .pred_class)
+
+    # final data outputs
+    final_lst = list(
+      "training"            = mod_train,
+      "testing"             = mod_test,
+      "variable_importance" = vip_table,
+      "model_results"       = mod_results,
+      "last_fit"            = mod_last_fit,
+      "final_fit"           = mod_final_fit,
+      "confusion_matrix"    = cm
+    )
 
     logger::log_info("Tidying model metrics... ")
 
+    final_lst
+
     # Model metrics
-    metrics_df          <- bind_rows(train_metrics, test_metrics)
+    # metrics_df          <- bind_rows(train_metrics, test_metrics)
 
-  })
+  }) %>%
+    stats::setNames(c(wfs$wflow_id))
 
-  reg_metrics_lst <- list()
-  vip_lst         <- list()
-  vip_rank_lst    <- list()
+  return(fit_mods)
 
-  mod_recipe     <- wfs$wflow_id[z]
-
-  ranking <- mod_rank %>%
-    filter(wflow_id == mod_recipe)
-
-  # relative model rankings
-  min_rank <- min(ranking$rank)
-  max_rank <- max(ranking$rank)
-
-  clean_rec_name <- gsub("_rec_lasso", "" ,mod_recipe)
-
-  mod_results <-
-    short_models %>%
-    extract_workflow_set_result(mod_recipe)
-  # extract_workflow_set_result("log_rec_lasso")
-
-  # Extract workflows
-  mod_workflow <-
-    short_models %>%
-    extract_workflow(mod_recipe)
-
-  print(select_best(mod_results, metric = "rsq"))
-  print(select_best(mod_results, metric = "rmse"))
-
-  logger::log_info("Fitting final model...\nPreprocessor: {mod_recipe}")
-
-  # Finalize workflow fit
-  mod_workflow_fit <-
-    mod_workflow %>%
-    finalize_workflow(select_best(mod_results, metric = "rsq")) %>%
-    fit(data = short_train)
-
-  # Fit model to split train/test data
-  mod_last_fit <- last_fit(mod_workflow_fit, short_split)
-  print(collect_metrics(mod_last_fit))
-
-  # Extract & save final fit to use for predictions
-  mod_final_fit <- mod_last_fit$.workflow[[1]]
-
-  logger::log_info("Collecting final metrics...")
-
-  # Variable importance plot
-  vip_plot <-
-    mod_last_fit %>%
-    pluck(".workflow", 1) %>%
-    extract_fit_parsnip() %>%
-    vip::vip(num_features = 40) +
-    labs(
-      title    = paste0("Variable Importance Scores - ", stringr::str_to_title(
-        gsub("_", " ", basin_name)
-      )),
-      subtitle = "LASSO Regression",
-      caption  = paste0("Preprocessing recipe: ", clean_rec_name),
-      x        = "Importance",
-      y        = "Variables"
-    )
-
-  # training set predictions
-  mod_train <-
-    predict(mod_final_fit, short_train) %>%
-    bind_cols(dplyr::select(short_train, short)) # Add the true outcome data back in
-
-  # testing set predictions
-  mod_test <-
-    predict(mod_final_fit, short_test) %>%
-    bind_cols(dplyr::select(short_test, short))
-
-  multi_metric <- metric_set(rmse, rsq, mae)
-
-  # Train metrics
-  train_metrics <-
-    mod_train %>%
-    multi_metric(truth = short, estimate = .pred) %>%
-    mutate(
-      data           = "train",
-      model          = "lasso_regression",
-      recipe         = clean_rec_name,
-      min_model_rank = min_rank,
-      max_model_rank = max_rank,
-      basin          = basin_name
-    )
-
-  # Test metrics
-  test_metrics <-
-    mod_test %>%
-    multi_metric(truth = short, estimate = .pred) %>%
-    mutate(
-      data           = "test",
-      model          = "lasso_regression",
-      recipe         = clean_rec_name,
-      min_model_rank = min_rank,
-      max_model_rank = max_rank,
-      basin          = basin_name
-    )
-
-
-  logger::log_info("Tidying model metrics... ")
-
-  # Model metrics
-  reg_metrics          <- bind_rows(train_metrics, test_metrics)
-  print(reg_metrics)
-
-  reg_metrics_lst[[z]] <- reg_metrics
-
-  # Variable importance dataframe
-  vip_table <-
-    mod_last_fit %>%
-    pluck(".workflow", 1) %>%
-    extract_fit_parsnip() %>%
-    vip::vi() %>%
-    mutate(
-      model          = "lasso_regression",
-      recipe         = clean_rec_name,
-      min_model_rank = min_rank,
-      max_model_rank = max_rank,
-      basin          = basin_name
-    )
-
-  vip_lst[[z]] <- vip_table
-
-  # Variable importance dataframe
-  vip_rank_table <-
-    mod_last_fit %>%
-    pluck(".workflow", 1) %>%
-    extract_fit_parsnip() %>%
-    vip::vi(rank = T) %>%
-    mutate(
-      model          = "lasso_regression",
-      recipe         = clean_rec_name,
-      min_model_rank = min_rank,
-      max_model_rank = max_rank,
-      basin          = basin_name
-    )
-
-  vip_rank_lst[[z]] <- vip_rank_table
-
+}
+#
+#   reg_metrics_lst <- list()
+#   vip_lst         <- list()
+#   vip_rank_lst    <- list()
+#
+#   mod_recipe     <- wfs$wflow_id[z]
+#
+#   ranking <- mod_rank %>%
+#     filter(wflow_id == mod_recipe)
+#
+#   # relative model rankings
+#   min_rank <- min(ranking$rank)
+#   max_rank <- max(ranking$rank)
+#
+#   clean_rec_name <- gsub("_rec_lasso", "" ,mod_recipe)
+#
+#   mod_results <-
+#     short_models %>%
+#     extract_workflow_set_result(mod_recipe)
+#   # extract_workflow_set_result("log_rec_lasso")
+#
+#   # Extract workflows
+#   mod_workflow <-
+#     short_models %>%
+#     extract_workflow(mod_recipe)
+#
+#   print(select_best(mod_results, metric = "rsq"))
+#   print(select_best(mod_results, metric = "rmse"))
+#
+#   logger::log_info("Fitting final model...\nPreprocessor: {mod_recipe}")
+#
+#   # Finalize workflow fit
+#   mod_workflow_fit <-
+#     mod_workflow %>%
+#     finalize_workflow(select_best(mod_results, metric = "rsq")) %>%
+#     fit(data = short_train)
+#
+#   # Fit model to split train/test data
+#   mod_last_fit <- last_fit(mod_workflow_fit, short_split)
+#   print(collect_metrics(mod_last_fit))
+#
+#   # Extract & save final fit to use for predictions
+#   mod_final_fit <- mod_last_fit$.workflow[[1]]
+#
+#   logger::log_info("Collecting final metrics...")
+#
+#   # Variable importance plot
+#   vip_plot <-
+#     mod_last_fit %>%
+#     pluck(".workflow", 1) %>%
+#     extract_fit_parsnip() %>%
+#     vip::vip(num_features = 40) +
+#     labs(
+#       title    = paste0("Variable Importance Scores - ", stringr::str_to_title(
+#         gsub("_", " ", basin_name)
+#       )),
+#       subtitle = "LASSO Regression",
+#       caption  = paste0("Preprocessing recipe: ", clean_rec_name),
+#       x        = "Importance",
+#       y        = "Variables"
+#     )
+#
+#   # training set predictions
+#   mod_train <-
+#     predict(mod_final_fit, short_train) %>%
+#     bind_cols(dplyr::select(short_train, short)) # Add the true outcome data back in
+#
+#   # testing set predictions
+#   mod_test <-
+#     predict(mod_final_fit, short_test) %>%
+#     bind_cols(dplyr::select(short_test, short))
+#
+#   multi_metric <- metric_set(rmse, rsq, mae)
+#
+#   # Train metrics
+#   train_metrics <-
+#     mod_train %>%
+#     multi_metric(truth = short, estimate = .pred) %>%
+#     mutate(
+#       data           = "train",
+#       model          = "lasso_regression",
+#       recipe         = clean_rec_name,
+#       min_model_rank = min_rank,
+#       max_model_rank = max_rank,
+#       basin          = basin_name
+#     )
+#
+#   # Test metrics
+#   test_metrics <-
+#     mod_test %>%
+#     multi_metric(truth = short, estimate = .pred) %>%
+#     mutate(
+#       data           = "test",
+#       model          = "lasso_regression",
+#       recipe         = clean_rec_name,
+#       min_model_rank = min_rank,
+#       max_model_rank = max_rank,
+#       basin          = basin_name
+#     )
+#
+#
+#   logger::log_info("Tidying model metrics... ")
+#
+#   # Model metrics
+#   reg_metrics          <- bind_rows(train_metrics, test_metrics)
+#   print(reg_metrics)
+#
+#   reg_metrics_lst[[z]] <- reg_metrics
+#
+#   # Variable importance dataframe
+#   vip_table <-
+#     mod_last_fit %>%
+#     pluck(".workflow", 1) %>%
+#     extract_fit_parsnip() %>%
+#     vip::vi() %>%
+#     mutate(
+#       model          = "lasso_regression",
+#       recipe         = clean_rec_name,
+#       min_model_rank = min_rank,
+#       max_model_rank = max_rank,
+#       basin          = basin_name
+#     )
+#
+#   vip_lst[[z]] <- vip_table
+#
+#   # Variable importance dataframe
+#   vip_rank_table <-
+#     mod_last_fit %>%
+#     pluck(".workflow", 1) %>%
+#     extract_fit_parsnip() %>%
+#     vip::vi(rank = T) %>%
+#     mutate(
+#       model          = "lasso_regression",
+#       recipe         = clean_rec_name,
+#       min_model_rank = min_rank,
+#       max_model_rank = max_rank,
+#       basin          = basin_name
+#     )
+#
+#   vip_rank_lst[[z]] <- vip_rank_table
+#
 
 # -------------------------
 # ---- Test/Train data ----
 # -------------------------
 
-# Final Variable importance list
-final_vip_lst      <- list()
-
-final_vip_rank_lst <- list()
-
-# Final Metrics list
-final_metric_lst   <- list()
-i = 2
 for (i in 1:length(out_lst)) {
-
+  # i = 2
   basin_name <- unique(out_lst[[i]]$basin)[1]
 
-  logger::log_info("LASSO Regression model - {basin_name}")
+  logger::log_info("{basin_name}")
 
   # # Modeling data subset
   # basin_df <-
@@ -793,17 +1269,41 @@ for (i in 1:length(out_lst)) {
     df         = out_lst[[i]],
     # df         = dplyr::select(out_lst[[i]], -basin),
     target_var = "out_pct",
+    basin_name = basin_name,
     model_type = "classification",
     strata     = "seniority",
     nfolds     = 5,
     ncores     = 6,
-    save_path  = paste0(
-      "D:/cpo/models/workflowsets/",
-      tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name)),
-      "_class_",
-      "workflowset.rds"
-      )
+    save_path  = paste0("D:/cpo/models/")
+    # save_path  = paste0(
+    #   "D:/cpo/models/workflowsets/",
+    #   tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name)),
+    #   "_class_",
+    #   "workflowset.rds"
+    #   )
     )
+  # df         = out_lst[[i]]
+  # target_var = "out_pct"
+  # model_type = "classification"
+  # basin_name = basin_name
+  # strata     = "seniority"
+  # nfolds     = 5
+  # ncores     = 6
+  # save_path  = paste0("D:/cpo/models/")
+  # save_path  = paste0(
+  #   "D:/cpo/models/workflowsets/",
+  #   tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name)),
+  #   "_class_",
+  #   "workflowset.rds"
+  #   )
+  # )
+
+  save_path  = paste0(
+    "D:/cpo/models/workflowsets/",
+    tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name)),
+    "_class_",
+    "workflowset.rds"
+  )
 
   class_mod_comp <- make_comp_plot(
     wfs        = class_wfs,
@@ -812,6 +1312,9 @@ for (i in 1:length(out_lst)) {
     save_path  = "D:/cpo/models/plots/"
   )
 
+  class_results <- extract_results(
+
+  )
   # save_path = paste0(
   #   "D:/cpo/models/workflowsets/",
   #   tolower(gsub(" ", "_", df$basin[1])),
