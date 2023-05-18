@@ -23,8 +23,15 @@ swe_path <- "data/swe_data"
 # district shape path
 district_path <- "data/water_districts_simple.geojson"
 
-# path to dataset with snotel site IDs
-site_path <- "data/snotel_sites.csv"
+# path to district snotel
+site_path <- "data/district_snotel_table.csv"
+
+# # path to dataset with snotel site IDs
+# site_path <- "data/snotel_sites.csv"
+
+# -----------------------------------------
+# ---- Get/Make Snotel dataframe paths ----
+# -----------------------------------------
 
 # load and go get call analysis data
 if(file.exists(paste0(swe_path, ".rds"))) {
@@ -39,11 +46,16 @@ if(file.exists(paste0(swe_path, ".rds"))) {
 
 } else {
 
-  snotel_df <- get_snotel(
+  # get district level SWE data
+  snotel_df <- aggreg_snotel(
     site_path     = site_path,
     district_path = district_path
-    )
+  )
 
+  # snotel_df <- get_snotel(
+    # site_path     = site_path,
+    # district_path = district_path
+  # )
   message(paste0(
     "Saving SNOTEL SWE data: ",
     "\n---> ",  paste0(swe_path, ".rds"),
@@ -54,6 +66,48 @@ if(file.exists(paste0(swe_path, ".rds"))) {
   readr::write_csv(snotel_df, paste0(swe_path, ".csv"))
 
 }
+
+# -------------------
+# ---- Version 1 ----
+# -------------------
+
+# # path to snotel data
+# swe_path <- "data/swe_data"
+#
+# # district shape path
+# district_path <- "data/water_districts_simple.geojson"
+#
+# # path to dataset with snotel site IDs
+# site_path <- "data/snotel_sites.csv"
+#
+# # load and go get call analysis data
+# if(file.exists(paste0(swe_path, ".rds"))) {
+#
+#   message(paste0(
+#     "Reading SNOTEL SWE data: ",
+#     "\n---> ", swe_path
+#   ))
+#
+#   # read in call analysis data
+#   snotel_df <- readRDS(paste0(swe_path, ".rds"))
+#
+# } else {
+#
+#   snotel_df <- get_snotel(
+#     site_path     = site_path,
+#     district_path = district_path
+#   )
+#
+#   message(paste0(
+#     "Saving SNOTEL SWE data: ",
+#     "\n---> ",  paste0(swe_path, ".rds"),
+#     "\n---> ", paste0(swe_path, ".csv")
+#   ))
+#
+#   saveRDS(snotel_df, paste0(swe_path, ".rds"))
+#   readr::write_csv(snotel_df, paste0(swe_path, ".csv"))
+#
+# }
 
 # ----------------------
 # ---- Read in data ----

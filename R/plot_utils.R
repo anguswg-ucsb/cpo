@@ -1,3 +1,340 @@
+
+make_plots <- function(wfs, basin_name, model_type, save_path) {
+
+  mod_comp_plot <- make_comp_plot(
+    wfs        = wfs,
+    basin_name = basin_name,
+    model_type = model_type,
+    save_path  = save_path
+  )
+# wfs <- reg_mods
+# basin_name
+# model_type   = "regression"
+
+  vip_plot <- make_vip_plot(
+      wfs        = wfs,
+      basin_name = basin_name,
+      model_type = model_type
+      # save_path  = save_path
+    )
+
+
+  # Model outputs path
+  out_dir  <- paste0(save_path, "plots/")
+  comp_path <- paste0(
+                    out_dir,
+                    tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name)),
+                    ifelse(model_type == "classification", "_class_", "_reg_"),
+                    "model_rank.png"
+                  )
+
+  vip_path <- paste0(
+                  out_dir,
+                  tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name)),
+                  ifelse(model_type == "classification", "_class_", "_reg_"),
+                  "variable_importance.png"
+                )
+
+  # checking if workflowset/ directory exists, and if not, creates one
+  if(!dir.exists(out_dir)) {
+    logger::log_info("Creating plot directory:\n--> {out_dir}")
+
+    dir.create(out_dir)
+
+    logger::log_info("Saving {basin_name} {model_type} models comparison plot:\n--> {comp_path}")
+
+    # Save plot
+    ggplot2::ggsave(
+      comp_path,
+      plot   = mod_comp_plot,
+      width  = 52,
+      height = 28,
+      units  = "cm"
+    )
+
+  } else {
+
+    logger::log_info("Saving {basin_name} {model_type} models comparison plot:\n--> {comp_path}")
+
+    # Save plot
+    ggplot2::ggsave(
+      comp_path,
+      plot   = mod_comp_plot,
+      width  = 52,
+      height = 28,
+      units  = "cm"
+    )
+
+  }
+}
+
+# Make model comparison plots from workflowsets object
+make_comp_plot <- function(
+    wfs,
+    basin_name = "ID",
+    model_type = "classification",
+    save_path = NULL
+) {
+
+  # Comparing rmse rsq AND mae OF ALL MODELS
+  mod_comp_plot <-
+    wfs %>%
+    autoplot() +
+    ggplot2::geom_point(ggplot2::aes(color = wflow_id)) +
+    ggplot2::labs(
+      color = "Data Preprocessor",
+      title    = paste0(stringr::str_to_title(basin_name), " Model Comparisons"),
+      subtitle = paste0(stringr::str_to_title(model_type), " models")
+    ) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      plot.title    = ggplot2::element_text(size = 16, hjust = 0.5),
+      axis.text     = ggplot2::element_text(size = 10),
+      axis.title    = ggplot2::element_text(size = 12),
+      strip.text.x  = ggplot2::element_text(size =12, face = "bold"),
+      legend.title  = ggplot2::element_text(size = 12, face = "bold"),
+      legend.text   = ggplot2::element_text(size =10)
+    )
+  # theme(legend.position = "none")
+
+  # # Model outputs path
+  # out_dir  <- paste0(save_path, "plots/")
+  # out_path <- paste0(
+  #                 out_dir,
+  #                 tolower(gsub("[[:punct:][:blank:]]+", "_",  model_name)),
+  #                 ifelse(model_type == "classification", "_class_", "_reg_"),
+  #                 "model_rank.png"
+  #               )
+  #
+  # # checking if workflowset/ directory exists, and if not, creates one
+  # if(!dir.exists(out_dir)) {
+  #   logger::log_info("Creating plot directory:\n--> {out_dir}")
+  #
+  #   dir.create(out_dir)
+  #
+  #   logger::log_info("Saving {basin_name} {model_type} models comparison plot:\n--> {out_path}")
+  #
+  #   # Save plot
+  #   ggplot2::ggsave(
+  #     out_path,
+  #     plot   = mod_comp_plot,
+  #     width  = 52,
+  #     height = 28,
+  #     units  = "cm"
+  #   )
+  #
+  # } else {
+  #
+  #   logger::log_info("Saving {basin_name} {model_type} models comparison plot:\n--> {out_path}")
+  #
+  #   # Save plot
+  #   ggplot2::ggsave(
+  #     out_path,
+  #     plot   = mod_comp_plot,
+  #     width  = 52,
+  #     height = 28,
+  #     units  = "cm"
+  #   )
+  #
+  # }
+
+  return(mod_comp_plot)
+}
+
+make_vip_plot <- function(
+    wfs,
+    basin_name,
+    model_type,
+    save_path
+) {
+  # wfs        = wfs
+  # basin_name = basin_name
+  # model_type = model_type
+  mod_names <- strsplit(names(wfs$results), "_")
+
+  vip_tables <- lapply(1:length(wfs$results), function(i) {
+    # i = 2
+    fitted_model <- wfs$results[[i]]$last_fit
+
+    vip_tbl <- tryCatch(
+      {
+
+          fitted_model %>%
+          purrr::pluck(".workflow", 1) %>%
+          extract_fit_parsnip() %>%
+          vip::vi() %>%
+          # vip::vi(num_features = 70) +
+          dplyr::mutate(
+            basin      = basin_name,
+            model      = mod_names[[i]][1],
+            model_type = model_type
+          )
+        # ggplot2::labs(
+        #   title    = paste0("Variable Importance Scores - ", basin_name),
+        #   subtitle = paste0(simple_name, " - ", model_type),
+        #   y        = "Importance",
+        #   x        = "Variables"
+        # )
+
+      },
+      error = function(e) {
+        logger::log_error('Variable Importance is not avalaible for {basin_name} - {model_type}')
+        logger::log_error('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
+        logger::log_error(message(e))
+        NULL
+      }
+    )
+    vip_tbl
+
+  })
+
+  # Remove NULL elements from the list using indexing and is.null
+  vip_tables <- dplyr::bind_rows(vip_tables[!sapply(vip_tables, is.null)])
+
+  vip_plots <-
+    vip_tables %>%
+    # dplyr::filter(model != "glmnet") %>%
+    ggplot2::ggplot() +
+    ggplot2::geom_col(ggplot2::aes(x = Importance, y = Variable
+                                   # fill = Sign
+                                   )
+                      ) +
+    ggplot2::labs(
+      title    = paste0("Variable Importance Scores - ", basin_name),
+      subtitle = paste0("(", model_type, ")"),
+      y        = "Importance",
+      x        = "Variables"
+    ) +
+    ggplot2::facet_wrap(~model, scale = "free") +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      plot.title    = ggplot2::element_text(size = 16, hjust = 0.5),
+      plot.subtitle = ggplot2::element_text(size = 14, hjust = 0.5),
+      axis.text     = ggplot2::element_text(size = 10),
+      axis.title    = ggplot2::element_text(size = 12),
+      strip.text.x  = ggplot2::element_text(size =12, face = "bold"),
+      legend.title  = ggplot2::element_text(size = 12, face = "bold"),
+      legend.text   = ggplot2::element_text(size =10)
+    )
+  vip_plots
+  return(vip_plots)
+
+}
+
+make_roc_plot <- function(
+    wfs,
+    basin_name,
+    model_type,
+    save_path
+    ) {
+  mod_results <-
+    wfs$workflowset %>%
+    workflowsets::extract_workflow_set_result("kknn_rec_kknn")
+
+  mod_names <- strsplit(names(wfs$results), "_")
+
+  roc_plots <- lapply(1:length(wfs$workflowset$wflow_id), function(i) {
+
+    model_results <- wfs$results[[i]]$model_results
+
+    tryCatch(
+      {
+        model_results %>%
+          collect_predictions() %>%
+          group_by(id) %>%
+          roc_curve(out, .pred) %>%
+          ggplot(aes(1 - specificity, sensitivity, color = id)) +
+          geom_abline(lty = 2, color = "gray80", size = 1.5) +
+          geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
+          coord_equal() +
+          labs(
+            title    = paste0("AUC-ROC Curve - ", model_name),
+            subtitle = "Resample results from 10 Fold Cross Validation",
+            x        = "1 - Specificity",
+            y        = "Sensitivity"
+          )
+
+        fitted_model %>%
+          purrr::pluck(".workflow", 1) %>%
+          extract_fit_parsnip() %>%
+          vip::vi(num_features = 70) %>%
+          # vip::vi(num_features = 70) +
+          dplyr::mutate(
+            basin      = basin_name,
+            model      = mod_names[[i]][1],
+            model_type = model_type
+          )
+        # ggplot2::labs(
+        #   title    = paste0("Variable Importance Scores - ", basin_name),
+        #   subtitle = paste0(simple_name, " - ", model_type),
+        #   y        = "Importance",
+        #   x        = "Variables"
+        # )
+
+      },
+      error = function(e) {
+        logger::log_error('Variable Importance is not avalaible for {basin_name} - {model_type}')
+        logger::log_error('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
+        logger::log_error(message(e))
+        # stop()
+      }
+    )
+
+  })
+  wfs$workflowset$wflow_id
+  # Plot variable importance if avaliable for model
+  tryCatch(
+    {
+
+      # Resampled CV Fold AUC ROC Curve0-1 <-
+      roc_plot <-
+        mod_results %>%
+        collect_predictions() %>%
+        group_by(id) %>%
+        roc_curve(out, .pred_1) %>%
+        ggplot(aes(1 - specificity, sensitivity, color = id)) +
+        geom_abline(lty = 2, color = "gray80", size = 1.5) +
+        geom_path(show.legend = FALSE, alpha = 0.6, size = 1.2) +
+        coord_equal() +
+        labs(
+          title    = paste0("AUC-ROC Curve - ", model_name),
+          subtitle = "Resample results from 10 Fold Cross Validation",
+          x        = "1 - Specificity",
+          y        = "Sensitivity"
+        )
+
+      # # save ROC AUC plot to "aw-poudre-2020/dflow/boatable_day_plots/
+      # vip_path  <-   paste0(ml_data_path, "plots/win_class_vip_", model_name, ".png")
+      logger::log_info('\n\nSaving ROC AUC Importance plot:\n{paste0(
+                          save_path,
+                          tolower(gsub("[[:punct:][:blank:]]+", "_",  model_name)),
+                          # ifelse(model_type == "classification", "_class_", "_reg_"),
+                               "_", simple_name,
+                          "_roc_auc.plot"
+                          )}')
+
+      # Export plot
+      ggplot2::ggsave(
+        paste0(
+          save_path,
+          tolower(gsub("[[:punct:][:blank:]]+", "_",  model_name)),
+          "_", simple_name,
+          # ifelse(model_type == "classification", "_class_", "_reg_"),
+          "_roc_auc_plot.png"
+        ),
+        plot   = roc_plot
+      )
+    },
+    error = function(e) {
+      logger::log_error('ROC AUC not avalaible for {simple_name} - {model_type}')
+      logger::log_error('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
+      logger::log_error(message(e))
+      # stop()
+    }
+  )
+
+
+}
 make_corr_plots <- function(df, save_path) {
 
    # df <-

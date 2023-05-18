@@ -319,6 +319,278 @@ get_snotel <- function(
   return(snotel_df)
 
 }
+aggreg_snotel <- function(
+    site_path,
+    district_path,
+    start_lag = 3,
+    end_lag   = 12
+) {
+
+  # path to snotel data
+  # snotel_path <- "data/all_snotel_co.rds"
+
+  # district shape path
+  # district_path <- "data/water_districts_simple.geojson"
+
+  # site_path <- "data/snotel_sites.csv"
+
+  # water districts shape
+  dists   <- sf::read_sf(district_path)
+
+  # read in snotel data
+  site_df <- readr::read_csv(site_path)
+
+  # # read in snotel data
+  # site_df <- readr::read_csv(site_path)
+  # missing_sites <- readr::read_csv(missing_sites_path)
+  # dists2 <- sf::st_join(
+  #       dists,
+  #       sf::st_as_sf(site_df, coords = c("lon", "lat"), crs = 4326)
+  #     ) %>%
+  #     dplyr::filter(!is.na(site_id)) %>%
+  #     sf::st_drop_geometry() %>%
+  #     dplyr::rename(district = DISTRICT) %>%
+  #     dplyr::group_by(district) %>%
+  #     dplyr::summarise(
+  #       site_id = paste(site_id, collapse = ", ")
+  #     ) %>%
+  #     dplyr::bind_rows(missing_sites) %>%
+  #     dplyr::left_join(
+  #       dplyr::select(
+  #         sf::st_drop_geometry(dists),
+  #         basin = BASIN,
+  #         district = DISTRICT
+  #       ),
+  #       by = "district"
+  #     ) %>%
+  #     dplyr::relocate(basin, district, site_id)
+  #   readr::write_csv(dists2, "data/district_snotel_table.csv")
+  #   sf::st_write(site_pts2, "snotel_sites_pts.gpkg")
+  #   sf::st_write(dists2, "districts_with_snotel_ids.gpkg")
+  #   dists2 %>%
+  #     dplyr::mutate(
+  #       needs_snotel = dplyr::case_when(
+  #         is.na(site_id) ~ "YES",
+  #         TRUE ~ "NO")) %>%
+  #     ggplot2::ggplot() +
+  #     ggplot2::geom_sf(ggplot2::aes(fill = needs_snotel)) +
+  #     ggplot2::geom_sf(data = site_pts2)
+  # site_df %>%
+  #   sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) %>%
+  #   mapview::mapview() + dists
+
+  # Convert the sequence to a data frame
+  date_df <-
+    data.frame(
+      date = seq(as.Date("1979-12-31"), Sys.Date(), by = "7 days")
+    ) %>%
+    dplyr::mutate(
+      year      = lubridate::year(date),
+      week_num  = strftime(date, format = "%V"),
+      year_week = paste0(year, "_", week_num)
+    )
+
+  snotel_df <- lapply(1:nrow(site_df), function(i) {
+
+    logger::log_info("Getting district {unique(site_df[i, ]$district)} snotel data...")
+
+    # unique(site_df[i, ]$basin)
+    ids <- tidyr::separate_rows(site_df[i, ], site_id, sep = ", ")$site_id
+
+    snotel <- go_get_snotel_data(site_ids = ids) %>%
+      dplyr::mutate(
+        basin    = unique(site_df[i, ]$basin),
+        district = unique(site_df[i, ]$district)
+      )
+
+    snotel
+
+  })
+
+  # average SWE across each districts snotel sites and dates
+  snotel_df <-
+    snotel_df %>%
+    dplyr::bind_rows() %>%
+    dplyr::group_by(date, district, basin) %>%
+    dplyr::summarise(
+      swe = mean(snow_water_equivalent, na.rm =T)
+    ) %>%
+    dplyr::ungroup()
+
+  # impute missing (NA/NaN) values with mean across the basin for each date
+  # a handful of NAs persisted through this and so for that small amount,
+  # so we impute the mean across the whole state, the idea being
+  # that its such a small number of days so,
+  # we take a snapshot of general SWE conditions across the whole state use that to replace missing values
+  snotel_df <-
+    snotel_df %>%
+    dplyr::group_by(date, basin) %>%
+    dplyr::mutate(
+      swe  = ifelse(is.na(swe) |is.nan(swe), mean(swe, na.rm = TRUE), swe)
+       ) %>%
+    dplyr::ungroup() %>%
+    dplyr::group_by(date) %>%
+    dplyr::mutate(
+      swe  = ifelse(is.na(swe) |is.nan(swe), mean(swe, na.rm = TRUE), swe)
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::rename(datetime = date)
+
+  # join daily district SWE values w/ weekly date dataframe and calc avg swe per week per district
+  snotel_df <-
+    snotel_df %>%
+    dplyr::mutate(
+      # year     = lubridate::year(datetime),
+      # week_num = strftime(datetime, format = "%V"),
+      year_week = paste0(lubridate::year(datetime), "_",  strftime(datetime, format = "%V"))
+    ) %>%
+    dplyr::filter(year_week %in% unique(date_df$year_week)) %>%
+    dplyr::left_join(
+      date_df,
+      relationship = "many-to-many",
+      by           = c("year_week")
+      # by           = c("year", "week_num")
+    ) %>%
+    dplyr::group_by(basin, district, date) %>%
+    dplyr::summarise(
+      swe = mean(swe, na.rm =T)
+    ) %>%
+    dplyr::ungroup()
+    # dplyr::filter(!is.na(date))
+
+  # remove NAs in date column
+  snotel_df <- dplyr::filter(snotel_df, !is.na(date))
+
+  # get complete date range to fill out missing dates for some snotel sites
+  date_range <-
+    snotel_df %>%
+    # dplyr::filter(basin == "South Platte") %>%
+    dplyr::group_by(basin) %>%
+    dplyr::add_count() %>%
+    dplyr::ungroup() %>%
+    dplyr::slice_max(n) %>%
+    dplyr::select(date) %>%
+    dplyr::distinct()
+
+  expanded_df  <-
+    snotel_df %>%
+    tidyr::complete(district, date = date_range$date) %>%
+    dplyr::left_join(
+      dplyr::distinct(dplyr::select(snotel_df, basin2 = basin, district)),
+      by = "district"
+    ) %>%
+    dplyr::mutate(basin = ifelse(is.na(basin), basin2, basin)) %>%
+    dplyr::select(-basin2) %>%
+    dplyr::group_by(basin, date) %>%
+    dplyr::mutate(swe = ifelse(is.na(swe), mean(swe, na.rm = TRUE), swe)) %>%
+    dplyr::ungroup() %>%
+    dplyr::filter(!is.na(swe))
+
+  # # add lagged SWE value by basin, default lag is 3-12 month lags
+  # snotel_df2 <-
+  #   snotel_df2 %>%
+  #   dplyr::group_by(basin, district) %>%
+  #   timetk::tk_augment_lags(swe, .lags = seq(start_lag*4, end_lag*4, 4)) %>%
+  #   stats::setNames(
+  #     c("basin", "district", "date", "swe",
+  #       paste0("swe_lag_", seq(start_lag, end_lag), "_month"))
+  #   ) %>%
+  #   dplyr::ungroup() %>%
+  #   na.omit()
+
+  # # add monthly by year and basin
+  # snotel_df <-
+  #   snotel_df %>%
+  #   dplyr::mutate(
+  #     year  = lubridate::year(date)
+  #   ) %>%
+  #   dplyr::left_join(
+  #     na.omit(
+  #       tidyr::pivot_wider(
+  #         na.omit(
+  #           dplyr::mutate(
+  #             dplyr::ungroup(
+  #               dplyr::summarise(
+  #                 dplyr::group_by(
+  #                   dplyr::mutate(snotel_df,
+  #                                 month = lubridate::month(date, label = T),
+  #                                 year  = lubridate::year(date)
+  #                   ),
+  #                   basin, month, year
+  #                 ),
+  #                 swe = max(swe, na.rm = T)
+  #               )
+  #             ),
+  #             month = tolower(month)
+  #           )
+  #         ),
+  #         names_from  = "month",
+  #         names_glue  = "{month}_{.value}",
+  #         values_from = "swe"
+  #       )
+  #     ),
+  #     by = c("basin", "year")
+  #   ) %>%
+  #   dplyr::select(-year) %>%
+  #   dplyr::ungroup()
+
+  # calculate March, April, May peak SWE values
+  peaks <-
+    expanded_df %>%
+    dplyr::mutate(
+      month = lubridate::month(date, label = T),
+      year  = lubridate::year(date)
+    ) %>%
+    dplyr::group_by(basin, district, month, year) %>%
+    dplyr::summarise(
+      peak_swe = round(max(swe, na.rm = T), 4)
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::filter(month %in% c("Mar", "Apr", "May")) %>%
+    na.omit() %>%
+    dplyr::group_by(basin, district, year) %>%
+    tidyr::pivot_wider(
+      id_cols     = c(basin, district, year),
+      names_from  = month,
+      values_from = peak_swe
+    ) %>%
+    dplyr::ungroup() %>%
+    na.omit()
+
+
+  # cleanup names
+  names(peaks) <- c("basin", "district", "year",
+                    c(paste0(tolower(names(peaks))[!grepl("basin|district|year", tolower(names(peaks)))], "_swe")))
+
+  # add Peak March, April, May SWE
+  expanded_df <-
+    expanded_df %>%
+    dplyr::mutate(
+      year  = lubridate::year(date)
+    ) %>%
+    dplyr::left_join(
+      dplyr::select(peaks, -basin),
+      by = c("district", "year")
+    ) %>%
+    dplyr::relocate(basin, district, date, swe, mar_swe, apr_swe, may_swe) %>%
+    dplyr::select(-year) %>%
+    dplyr::mutate(dplyr::across(where(is.numeric), \(x) round(x, 3))) %>%
+    dplyr::mutate(
+      district = ifelse(district < 10, paste0("0", district), district)
+    )
+
+  # expanded_df %>%
+  #   dplyr::select(-swe) %>%
+  #   tidyr::pivot_longer(cols =contains("swe")) %>%
+  #   # tidyr::pivot_longer(cols =("swe")) %>%
+  #   dplyr::filter(basin == "South Platte") %>%
+  #   ggplot2::ggplot() +
+  #   ggplot2::geom_line(ggplot2::aes(x = date, y = value, color = name), size = 1) +
+  #   ggplot2::facet_wrap(~district)
+
+  return(expanded_df)
+
+}
 
 # impute missing values w/ mean
 impute_mean <- function(x) {
@@ -692,7 +964,854 @@ admins_to_date <- function(
 
 }
 
+make_models <- function(
+    df         = NULL,
+    target_var = NULL,
+    basin_name = NULL,
+    model_type = "classification",
+    strata     = NULL,
+    nfolds     = 10,
+    ncores     = 6,
+    save_path  = NULL
+) {
 
+  # model_type = "regression"
+  # df <- df %>% rename(!!new_colname := !!target_var)
+
+  # # i = 2
+  # basin_name <- unique(out_lst[[i]]$basin)[1]
+  # df         = out_lst[[i]]
+  # # # rm(df2)
+  # # # df2 <- df %>%
+  # # #   dplyr::filter(!duplicated(.))
+  # #
+  # target_var = "out"
+  # model_type = "classification"
+  # # # target_var = "out_pct"
+  # # # model_type = "regression"
+  # basin_name = basin_name
+  # strata     = "seniority"
+  # nfolds     = 5
+  # ncores     = 6
+  # save_path  = paste0("D:/cpo/models/")
+
+  # ---- Preprocessing ----
+
+  if(model_type == "classification") {
+
+    df <-
+      df %>%
+      dplyr::select(-out_pct) %>%
+      dplyr::rename( out := !!target_var) %>%
+      dplyr::filter(!duplicated(.)) %>%
+      dplyr::mutate(
+        dplyr::across(where(is.character), as.factor)
+      )
+
+  } else {
+
+    df <-
+      df %>%
+      dplyr::select(-out) %>%
+      dplyr::rename( out := !!target_var) %>%
+      dplyr::filter(!duplicated(.)) %>%
+      dplyr::mutate(
+        dplyr::across(where(is.character), as.factor)
+      )
+
+  }
+
+  # rename target variable column to "out"
+  # df <- dplyr::rename(df, out := !!target_var)
+
+  # ---- Train/Test split ----
+
+  set.seed(234)
+
+  logger::log_info("Splitting data")
+  out_split <- rsample::initial_split(df, strata = !!strata)
+
+  logger::log_info("Creating training data")
+  # training data split
+  out_train <- rsample::training(out_split)
+
+  logger::log_info("Creating testing data")
+  # testinng data split
+  out_test  <- rsample::testing(out_split)
+
+  # ---- Recipes ----
+
+  logger::log_info("Data preprocessing...")
+
+  # GLMNET Recipe
+  glmnet_recipe <-
+    recipes::recipe(
+      # formula = {{target_var}} ~ .,
+      # data    = out_train
+      # formula = rlang::new_formula(quote(!!target_var),quote(.)),
+      formula = out ~ .,
+      data    = out_train
+    ) %>%
+    recipes::update_role(
+      basin, district,
+      new_role = "ID"
+    ) %>%
+    # recipes::step_string2factor(one_of( "seniority")) %>%
+    # recipes::step_str
+    # themis::step_smote(seniority) %>%
+    recipes::step_novel(recipes::all_nominal_predictors()) %>%
+    recipes::step_dummy(recipes::all_nominal_predictors()) %>%
+    recipes::step_zv(recipes::all_predictors()) %>%
+    recipes::step_normalize(recipes::all_numeric_predictors())
+
+
+  # bk <- recipes::prep(glmnet_recipe) %>% recipes::bake(new_data = NULL)
+
+  # # # # XGBoost trees
+  xgboost_recipe <-
+    recipes::recipe(
+      formula = out ~ .,
+      data    = out_train
+    ) %>%
+    recipes::update_role(
+      basin, district,
+      new_role = "ID"
+    ) %>%
+  # recipes::step_string2factor(one_of("seniority")) %>%
+    recipes::step_novel(recipes::all_nominal_predictors()) %>%
+    recipes::step_dummy(recipes::all_nominal_predictors(), one_hot = TRUE)
+
+  kknn_recipe <-
+    recipes::recipe(
+      formula = out ~ .,
+      data    = out_train
+    ) %>%
+    recipes::update_role(
+      basin, district,
+      new_role = "ID"
+    )
+
+  if (model_type == "classification") {
+
+
+    # GLMNET Recipe  w/ smote algo
+    glmnet_recipe <-
+      glmnet_recipe %>%
+      # themis::step_smote(out) %>%
+      # themis::step_smote(seniority) %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_numeric_predictors())
+
+    # XGBoost Recipe  w/ smote algo
+    xgboost_recipe <-
+      xgboost_recipe %>%
+      # themis::step_smote(out) %>%
+      # themis::step_smote(seniority) %>%
+      recipes::step_zv(recipes::all_predictors())
+
+    # K nearest neighbors recipe w/ smote algo
+    kknn_recipe <-
+      kknn_recipe %>%
+      # themis::step_smote(out) %>%
+      recipes::step_zv(all_predictors()) %>%
+      recipes::step_normalize(all_numeric_predictors())
+
+    #
+  } else {
+
+
+    # GLMNET recipe w/o smote algo
+    glmnet_recipe <-
+      glmnet_recipe %>%
+      recipes::step_zv(recipes::all_predictors()) %>%
+      recipes::step_normalize(recipes::all_numeric_predictors())
+
+    # XGBoost Recipe  w/o smote algo
+    xgboost_recipe <-
+      xgboost_recipe %>%
+      recipes::step_zv(recipes::all_predictors())
+
+    # K nearest neighbors recipe w/o smote algo
+    kknn_recipe <-
+      kknn_recipe %>%
+      recipes::step_zv(all_predictors()) %>%
+      recipes::step_normalize(all_numeric_predictors())
+
+  }
+  # # XGBoost trees
+  # xgboost_recipe <-
+  #   recipes::recipe(
+  #     formula = out ~ .,
+  #     data    = out_train
+  #   ) %>%
+  #   recipes::update_role(
+  #     basin,
+  #     new_role = "ID"
+  #   ) %>%
+  #   recipes::step_string2factor(one_of("seniority")) %>%
+  #   recipes::step_novel(recipes::all_nominal_predictors()) %>%
+  #   recipes::step_dummy(recipes::all_nominal_predictors(), one_hot = TRUE) %>%
+  #   themis::step_smote(out) %>%
+  #   recipes::step_zv(recipes::all_predictors())
+
+  # ---- Model specifications ----
+
+  logger::log_info("Creating model specifications...")
+  logger::log_info("Model type: ", model_type)
+
+  if (model_type == "classification") {
+
+    # GLMNET model specifications classification
+    glmnet_spec <-
+      parsnip::logistic_reg(
+        penalty = tune::tune(),
+        mixture = tune::tune()
+      ) %>%
+      parsnip::set_mode("classification") %>%
+      parsnip::set_engine("glmnet")
+
+    # # xgboost model - classification
+    xgboost_spec <-
+      parsnip::boost_tree(
+        trees          = tune::tune(),
+        min_n          = tune::tune(),
+        tree_depth     = tune::tune(),
+        learn_rate     = tune::tune(),
+        loss_reduction = tune::tune(),
+        sample_size    = tune::tune()
+      ) %>%
+      parsnip::set_mode("classification") %>%
+      parsnip::set_engine("xgboost", importance = "permutation")
+
+    # KKNN Model - classification
+    kknn_spec <-
+      parsnip::nearest_neighbor(
+        neighbors   = tune::tune(),
+        weight_func = tune::tune()
+      ) %>%
+      parsnip::set_mode("classification") %>%
+      parsnip::set_engine("kknn")
+
+  } else if (model_type == "regression") {
+
+    # # # GLMNET model specifications - regression
+    glmnet_spec <-
+      parsnip::linear_reg(
+        penalty = tune::tune(),
+        mixture = tune::tune()
+      ) %>%
+      parsnip::set_mode("regression") %>%
+      parsnip::set_engine("glmnet")
+
+    # # # xgboost model - regression
+    xgboost_spec <-
+      parsnip::boost_tree(
+        trees          = tune::tune(),
+        min_n          = tune::tune(),
+        tree_depth     = tune::tune(),
+        learn_rate     = tune::tune(),
+        loss_reduction = tune::tune(),
+        sample_size    = tune::tune()
+      ) %>%
+      parsnip::set_mode("regression") %>%
+      parsnip::set_engine("xgboost", importance = "permutation")
+
+    # KKNN Model - regression
+    kknn_spec <-
+      parsnip::nearest_neighbor(
+        neighbors   = tune::tune(),
+        weight_func = tune::tune()
+      ) %>%
+      parsnip::set_mode("regression") %>%
+      parsnip::set_engine("kknn")
+  }
+
+  # ---- Cross Validation folds ----
+
+  logger::log_info("Generating cross validation folds...")
+
+  # Set seed for resampling
+  set.seed(432)
+
+  # CV folds
+  out_folds <- rsample::vfold_cv(out_train, v = nfolds, strata = !!strata)
+
+  logger::log_info("Making workflowset...")
+
+  # ---- Workflow set of models ----
+  out_wfs <-
+    workflowsets::workflow_set(
+      preproc = list(
+        glmnet_rec      = glmnet_recipe,
+        xgboost_rec     = xgboost_recipe,
+        kknn_rec        = kknn_recipe
+      ),
+      models  = list(
+        glmnet   = glmnet_spec,
+        xgboost  = xgboost_spec,
+        kknn     = kknn_spec
+      ),
+      cross = F
+    )
+
+  # Choose eval metrics
+  if (model_type == "classification") {
+
+    my_metrics <- yardstick::metric_set(roc_auc, accuracy, mn_log_loss)
+
+  } else if (model_type == "regression") {
+
+    my_metrics <- yardstick::metric_set(rsq, rmse)
+
+  }
+
+  logger::log_info("Starting {ncores} parallel workers...")
+
+  # Set up parallelization, using computer's other cores
+  parallel::detectCores(logical = FALSE)
+  modeltime::parallel_start(ncores, .method = "parallel")
+
+
+  logger::log_info("Tuning hyperparameters...")
+
+  # Set Random seed
+  set.seed(589)
+
+  # Efficient Tuning of models in workflowset
+  out_wfs <-
+    out_wfs %>%
+    workflowsets::workflow_map(
+      "tune_race_anova",
+      resamples = out_folds,
+      # resamples = flow_roll_splits,
+      grid      = 20,
+      metrics   = my_metrics,
+      control = finetune::control_race(
+        verbose       = TRUE,
+        save_pred     = TRUE,
+        verbose_elim  = TRUE,
+        save_workflow = TRUE
+      ),
+      verbose   = TRUE
+    )
+
+  # Stop parrallelization
+  modeltime::parallel_stop()
+
+  logger::log_info("Tuning complete!")
+
+  # ---- Generate Metrics ----
+
+  results <- extract_results(
+    wfs        = out_wfs,
+    basin_name = basin_name,
+    model_type = model_type,
+    train_data = out_train,
+    test_data  = out_test,
+    split_data = out_split
+
+  )
+
+  # final output list of data
+  out <- list(
+    "workflowset" = out_wfs,
+    "results"     = results
+  )
+
+  # Model outputs path
+  out_dir  <- paste0(save_path, "outputs/")
+  out_path <- paste0(
+    out_dir,
+    tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name)),
+    ifelse(model_type == "classification", "_class_", "_reg_"),
+    "models.rds"
+  )
+
+  # checking if workflowset/ directory exists, and if not, creates one
+  if(!dir.exists(out_dir)) {
+    logger::log_info("Creating outputs directory:\n--> {out_dir}")
+
+    dir.create(out_dir)
+
+    logger::log_info("Saving {basin_name} {model_type} models:\n--> {out_path}")
+
+    # Save Workflows/Resample results/Final fitted model
+    saveRDS(
+      out,
+      out_path
+    )
+
+  } else {
+
+    logger::log_info("Saving {basin_name} {model_type} models:\n--> {out_path}")
+
+    # Save Workflows/Resample results/Final fitted model
+    saveRDS(
+      out,
+      out_path
+    )
+
+  }
+
+  return(out)
+
+}
+
+# # Make model comparison plots from workflowsets object
+# make_comp_plot <- function(
+#     wfs,
+#     model_name = "ID",
+#     model_type = "classification",
+#     save_path = NULL
+# ) {
+#
+#   # model_type = "classification"
+#   # model_name = unique(out_lst[[i]]$basin)[1]
+#   # wfs <- class_wfs
+#   # ifelse(model_type == "classification", "class", "reg")
+#   # # Plot path
+#   # save_path <-   "D:/cpo/models/plots/"
+#   # paste0(
+#   #   save_path,
+#   #   tolower(gsub("[[:punct:][:blank:]]+", "_",  model_name)),
+#   #   ifelse(model_type == "classification", "_class_", "_reg_"),
+#   #   "model_rank.png"
+#   # )
+#
+#   # model_name = basin_name
+#   # wfs        = reg_mods$workflowset
+#   # model_name = basin_name
+#   # model_type = "regression"
+#   # save_path  = paste0("D:/cpo/models/")
+#
+#   # Comparing rmse rsq AND mae OF ALL MODELS
+#   mod_comp_plot <-
+#     wfs %>%
+#     autoplot() +
+#     ggplot2::geom_point(ggplot2::aes(color = wflow_id)) +
+#     ggplot2::labs(
+#       color = "Data Preprocessor",
+#       title    = paste0(stringr::str_to_title(model_name), " Model Comparisons"),
+#       subtitle = paste0(stringr::str_to_title(model_type), " models")
+#     ) +
+#     ggplot2::theme_bw()
+#   # theme(legend.position = "none")
+#
+#   # reg_mod_comp_plot
+#   logger::log_info('Saving {model_name} {model_type} model ranking plot\n{paste0(
+#                       save_path,
+#                       tolower(gsub("[[:punct:][:blank:]]+", "_",  model_name)),
+#                       ifelse(model_type == "classification", "_class_", "_reg_"),
+#                       "model_rank.png"
+#                     )}')
+#
+#   # Model outputs path
+#   out_dir  <- paste0(save_path, "plots/")
+#   out_path <- paste0(
+#     out_dir,
+#     tolower(gsub("[[:punct:][:blank:]]+", "_",  model_name)),
+#     ifelse(model_type == "classification", "_class_", "_reg_"),
+#     "model_rank.png"
+#   )
+#
+#   # checking if workflowset/ directory exists, and if not, creates one
+#   if(!dir.exists(out_dir)) {
+#     logger::log_info("Creating plot directory:\n--> {out_dir}")
+#
+#     dir.create(out_dir)
+#
+#     logger::log_info("Saving {basin_name} {model_type} models comparison plot:\n--> {out_path}")
+#
+#     # Save plot
+#     ggplot2::ggsave(
+#       out_path,
+#       plot   = mod_comp_plot,
+#       width  = 52,
+#       height = 28,
+#       units  = "cm"
+#     )
+#
+#   } else {
+#
+#     logger::log_info("Saving {basin_name} {model_type} models comparison plot:\n--> {out_path}")
+#
+#     # Save plot
+#     ggplot2::ggsave(
+#       out_path,
+#       plot   = mod_comp_plot,
+#       width  = 52,
+#       height = 28,
+#       units  = "cm"
+#     )
+#
+#   }
+#
+#   return(mod_comp_plot)
+# }
+
+
+extract_results <- function(
+    wfs,
+    basin_name,
+    model_type,
+    train_data,
+    test_data,
+    split_data,
+    save_path
+) {
+
+  # train_data = out_train
+  # test_data = out_test
+  # split_data = out_split
+  # wfs        = out_wfs
+  # basin_name = basin_name
+  # model_type = model_type
+  # wfs        = out_wfs
+  # basin_name = basin_name
+  # model_type = model_type
+  # train_data = out_train
+  # test_data  = out_test
+  # split_data = out_split
+
+  # Table of model ranks
+  mod_rank <- workflowsets::rank_results(wfs)
+
+  # iterate through models in workflowsets and extract metrics and make predictions
+  fit_mods <- lapply(1:length(wfs$wflow_id), function(z) {
+
+    message("Summarizing model ", z, "/", length(wfs$wflow_id))
+
+    # recipe name
+    mod_recipe     <- wfs$wflow_id[z]
+
+    # relative model rankings
+    min_rank <- min(dplyr::filter(mod_rank, wflow_id == mod_recipe)$rank)
+    max_rank <- max(dplyr::filter(mod_rank, wflow_id == mod_recipe)$rank)
+
+    # make clean names
+    clean_rec_name <- paste0(mod_recipe, "_", ifelse(model_type == "classification", "class", "reg"))
+    simple_name    <- sub(".+_", "", mod_recipe)
+
+    # extract workflow set results for recipe
+    mod_results <- workflowsets::extract_workflow_set_result(wfs, mod_recipe)
+
+    # Extract workflows
+    mod_workflow <- extract_workflow(wfs, mod_recipe)
+
+    logger::log_info("Fitting final model...\nPreprocessor: {mod_recipe}")
+
+    met <- ifelse(model_type == "classification", "roc_auc", "rsq")
+
+    # Finalize workflow fit
+    mod_workflow_fit <-
+      mod_workflow %>%
+      tune::finalize_workflow(tune::select_best(mod_results, metric = met)) %>%
+      fit(data = train_data)
+
+    # Fit model to split train/test data
+    mod_last_fit <- tune::last_fit(mod_workflow_fit, split_data)
+
+    # Extract & save final fit to use for predictions
+    mod_final_fit <- mod_last_fit$.workflow[[1]]
+
+    if(model_type == "classification") {
+
+      logger::log_info("Collecting training data predictions...")
+
+      # training set predictions
+      mod_train <-
+        predict(mod_final_fit, train_data) %>%
+        bind_cols(predict(mod_final_fit, train_data, type = "prob")) %>%
+        dplyr::bind_cols(dplyr::select(train_data, out)) # Add the true outcome data back in
+
+      logger::log_info("Collecting testing data predictions...")
+
+      # testing set predictions
+      mod_test <-
+        predict(mod_final_fit, test_data) %>%
+        bind_cols(predict(mod_final_fit, test_data, type = "prob")) %>%
+        dplyr::bind_cols(dplyr::select(test_data, out))
+
+    } else {
+
+      logger::log_info("Collecting training data predictions...")
+
+      # training set predictions
+      mod_train <-
+        predict(mod_final_fit, train_data) %>%
+        dplyr::bind_cols(dplyr::select(train_data, out)) # Add the true outcome data back in
+
+      logger::log_info("Collecting testing data predictions...")
+
+      # testing set predictions
+      mod_test <-
+        predict(mod_final_fit, test_data) %>%
+        dplyr::bind_cols(dplyr::select(test_data, out))
+    }
+
+    # logger::log_info("Collecting testing data predictions...")
+    #
+    # if(model_type == "classification") {
+    #
+    #   # testing set predictions
+    #   mod_test <-
+    #     predict(mod_final_fit, test_data) %>%
+    #     bind_cols(predict(mod_final_fit, test_data, type = "prob")) %>%
+    #     dplyr::bind_cols(dplyr::select(test_data, out))
+    #
+    # } else {
+    #
+    #   # testing set predictions
+    #   mod_test <-
+    #     predict(mod_final_fit, test_data) %>%
+    #     dplyr::bind_cols(dplyr::select(test_data, out))
+    # }
+
+    if(model_type == "classification") {
+
+      multi_metric <- yardstick::metric_set(roc_auc, pr_auc, accuracy)
+
+    } else if(model_type == "regression") {
+
+      multi_metric <- yardstick::metric_set(rmse, rsq, mae)
+    }
+
+    # est = ifelse(model_type == "classification", ".pred_class", ".pred")
+
+    # Plot variable importance if avaliable for model
+    vip_table <- tryCatch(
+      {
+        logger::log_info("Collecting variable importance...")
+
+        # Variable importance dataframe
+        # vip_table <-
+        mod_last_fit %>%
+          purrr::pluck(".workflow", 1) %>%
+          extract_fit_parsnip() %>%
+          vip::vi() %>%
+          dplyr::mutate(
+            model_type     = model_type,
+            recipe         = clean_rec_name,
+            min_model_rank = min_rank,
+            max_model_rank = max_rank,
+            basin          = basin_name
+          )
+      },
+      error = function(e) {
+        logger::log_error('Variable Importance is not avalaible for {simple_name} - {model_type}')
+        logger::log_error('Setting vip_table to NULL')
+        logger::log_error('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
+        logger::log_error(message(e))
+
+        NULL
+        # vip_table <- NULL
+
+      }
+    )
+
+    # # Train metrics
+    # train_metrics <-
+    #   mod_train %>%
+    #   multi_metric(truth = out, estimate = .pred) %>%
+    #   mutate(
+    #     data           = "train",
+    #     model          = mod_recipe,
+    #     recipe         = clean_rec_name,
+    #     min_model_rank = min_rank,
+    #     max_model_rank = max_rank,
+    #     basin          =  tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name))
+    #   )
+
+    # # Test metrics
+    # test_metrics <-
+    #   mod_test %>%
+    #   multi_metric(truth = out, estimate = .pred) %>%
+    #   mutate(
+    #     data           = "test",
+    #     model          = mod_recipe,
+    #     recipe         = clean_rec_name,
+    #     min_model_rank = min_rank,
+    #     max_model_rank = max_rank,
+    #     basin          =  tolower(gsub("[[:punct:][:blank:]]+", "_",  basin_name))
+    #   )
+
+    if(model_type == "classification") {
+
+      logger::log_info("Creating confusion matrix...")
+
+      cm <- yardstick::conf_mat(collect_predictions(mod_results), out, .pred_class)
+
+    } else {
+
+      cm <- NULL
+
+    }
+
+    logger::log_info("Extracting {model_type} metrics...")
+
+    if(model_type == "classification") {
+
+      metrics_df <- calc_class_metrics(
+        final_fit    = mod_final_fit,
+        fitted_train = mod_train,
+        fitted_test  = mod_test,
+        model_name   = clean_rec_name,
+        basin_name   = basin_name
+      )
+
+    } else {
+
+      metrics_df <- calc_reg_metrics(
+        final_fit    = mod_final_fit,
+        fitted_train = mod_train,
+        fitted_test  = mod_test,
+        model_name   = clean_rec_name,
+        basin_name   = basin_name
+      )
+
+    }
+
+    logger::log_info("Tidying model metrics... ")
+
+    # final data outputs
+    final_lst = list(
+      "training"            = mod_train,
+      "testing"             = mod_test,
+      "metrics"             = metrics_df,
+      "variable_importance" = vip_table,
+      "confusion_matrix"    = cm,
+      "model_results"       = mod_results,
+      "last_fit"            = mod_last_fit,
+      "final_fit"           = mod_final_fit
+    )
+
+    final_lst
+
+  }) %>%
+    stats::setNames(c(
+      paste0(sub(".+_", "", wfs$wflow_id), "_", ifelse(model_type == "classification", "class", "reg"))
+    )
+    )
+
+  return(fit_mods)
+
+}
+
+calc_class_metrics <- function(final_fit, fitted_train, fitted_test, model_name, basin_name) {
+
+  # # training set predictions
+  # mod_train <-
+  #   predict(final_fit, train_data) %>%
+  #   bind_cols(predict(final_fit, train_data, type = "prob")) %>%
+  #   bind_cols(dplyr::select(train_data, out)) # Add the true outcome data back in
+  #
+  # # testing set predictions
+  # mod_test <-
+  #   predict(final_fit, test_data) %>%
+  #   bind_cols(predict(final_fit, test_data, type = "prob")) %>%
+  #   bind_cols(dplyr::select(test_data, out))
+
+  # Train metrics
+  train_metrics <-
+    fitted_train %>%
+    yardstick::metrics(truth = out, estimate = .pred_class, .pred_1) %>%
+    dplyr::mutate(
+      data   = "train",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  # Test metrics
+  test_metrics <-
+    fitted_test %>%
+    yardstick::metrics(truth = out, estimate = .pred_class, .pred_1) %>%
+    dplyr::mutate(
+      data   = "test",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  sens_train <-
+    fitted_train %>%
+    yardstick::sens(truth = out, estimate = .pred_class) %>%
+    dplyr::mutate(
+      data   = "train",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  sens_test <-
+    fitted_test %>%
+    yardstick::sens(truth = out, estimate = .pred_class) %>%
+    dplyr::mutate(
+      data   = "test",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  spec_train <-
+    fitted_train %>%
+    yardstick::spec(truth = out, estimate = .pred_class)  %>%
+    dplyr::mutate(
+      data   = "train",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  spec_test <-
+    fitted_test %>%
+    yardstick::spec(truth = out, estimate = .pred_class) %>%
+    dplyr::mutate(
+      data   = "test",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  # Model train/test metrics
+  mod_metrics <- dplyr::bind_rows(
+    train_metrics, sens_train, spec_train,
+    test_metrics, sens_test, spec_test
+  ) %>%
+    dplyr::relocate(basin)
+
+  return(mod_metrics)
+}
+
+calc_reg_metrics <- function(final_fit, fitted_train, fitted_test, model_name, basin_name) {
+  # fitted_train = mod_train
+  # fitted_test = mod_test
+  # final_fit = mod_final_fit
+
+  # Train metrics
+  train_metrics <-
+    fitted_train %>%
+    yardstick::metrics(truth = out, estimate = .pred) %>%
+    dplyr::mutate(
+      data   = "train",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  # Test metrics
+  test_metrics <-
+    fitted_test %>%
+    yardstick::metrics(truth = out, estimate = .pred) %>%
+    dplyr::mutate(
+      data   = "test",
+      model  = model_name,
+      basin  = basin_name
+    )
+
+  # Model train/test metrics
+  mod_metrics <-
+    dplyr::bind_rows(
+      train_metrics,
+      test_metrics
+    ) %>%
+    dplyr::relocate(basin)
+
+  return(mod_metrics)
+}
 # library(terra)
 # library(dplyr)
 # shp_path <- "D:/louisville_wildfire/counties/aoi_counties.gpkg"

@@ -57,6 +57,10 @@ if(file.exists(gnis_path)) {
 
     message(paste0(i, "/", nrow(dist_shp)))
 
+    mapview::mapview(gnis)
+    # i = 20
+    # dist_shp$DISTRICT
+    # nhdplusTools::get_nwis(sf::st_buffer(gnis, 5))
     gnis <- nhdplusTools::get_nhdplus(
       AOI         = dist_shp[i, ],
       realization = "flowline"
@@ -90,6 +94,13 @@ if(file.exists(gnis_path)) {
         dplyr::ungroup() %>%
         dplyr::select(district, gnis_id, gnis_name, streamorde, len, unit, geometry)
 
+      # coms <-
+      #   gnis %>%
+      #   dplyr::filter(gnis_id %in% gnis_res$gnis_id) %>%
+      #   dplyr::group_by(gnis_id) %>%
+      #   dplyr::slice_max(hydroseq) %>%
+      #   dplyr::select(comid, gnis_id)
+
       gnis
 
     }, error = function(e) {
@@ -118,7 +129,7 @@ if(file.exists(wr_gnis_path)) {
   wr_gnis <- readRDS(wr_gnis_path)
 
 } else {
-
+  # gnis_flines <- gnis
   # filter GNIS IDs to streamorders greater than or equal to 4
   # filter gnis IDs with missing names
   # filter out stream flines less than 10,000 meters
@@ -150,7 +161,9 @@ if(file.exists(wr_gnis_path)) {
       )
     ) %>%
     dplyr::ungroup()
-
+  sf::st_buffer(wr_gnis[2, ], 5000) %>%
+  get_nldi_feature()
+  nhdplusTools::get_nwis(sf::st_buffer(wr_gnis[2, ], 5000))
   message(paste0("Saving data to path ---> ", wr_gnis_path))
 
   # save rds

@@ -55,19 +55,22 @@ if(file.exists(model_data_path)) {
             by = c("district")
         ) %>%
         dplyr::relocate(basin, district) %>%
+        dplyr::filter(date %in% unique(snotel_df$date)) %>%
         dplyr::left_join(
-            snotel_df,
-            by = c("basin", "date")
+            dplyr::select(snotel_df, -basin),
+            by = c("district", "date")
         ) %>%
-        dplyr::mutate(
-            month = lubridate::month(date)
-        ) %>%
-        dplyr::group_by(month, basin) %>%
-        dplyr::mutate(
-            swe = impute_mean(swe)
-        ) %>%
+        dplyr::filter(!is.na(swe), !is.na(mar_swe), !is.na(apr_swe), !is.na(may_swe)) %>% # remove missing SWE values
+        # dplyr::mutate(
+        #     month = lubridate::month(date)
+        # ) %>%
+        # dplyr::group_by(month, basin, district) %>%
+        # dplyr::mutate(
+        #     dplyr::across(contains("swe"), impute_mean)
+        #     # swe = impute_mean(swe)
+        # ) %>%
         dplyr::ungroup() %>%
-        dplyr::select(-month) %>%
+        # dplyr::select(-month) %>%
         dplyr::mutate(
             out = dplyr::case_when(
                 out_pct > 0 ~ "1",
@@ -94,9 +97,64 @@ rm(clim_ts, wr_net, dist_shp, wr_pts, week_calls, gnis_flines, snotel_df,
 
 #  =======================================
 #  =======================================
-
-
-
+#
+#
+# modsdf <-
+#     week_calls %>%
+#     dplyr::left_join(
+#         clim_ts,
+#         by = c("district", "date")
+#     ) %>%
+#     dplyr::left_join(
+#         dplyr::mutate(
+#             dplyr::select(
+#                 sf::st_drop_geometry(sf::read_sf(district_path)), district = DISTRICT, basin = BASIN
+#             ),
+#             district = dplyr::case_when(
+#                 as.numeric(district) < 10 ~ paste0("0", district),
+#                 TRUE                      ~ paste0(district)
+#             )
+#         ),
+#         by = c("district")
+#     ) %>%
+#     dplyr::relocate(basin, district) %>%
+#     dplyr::filter(date %in% unique(snotel_df$date)) %>%
+#     dplyr::mutate(
+#         year     = lubridate::year(date),
+#         week_num = strftime(date, format = "%V")
+#     ) %>%
+#     dplyr::left_join(
+#         dplyr::select(
+#             dplyr::mutate(
+#                 expanded_df,
+#                 year     = lubridate::year(date),
+#                 week_num = strftime(date, format = "%V"),
+#             ),
+#             -date, -basin
+#         ),
+#         # by = c("basin", "district", "date")
+#         relationship = "many-to-many",
+#         by           = c("district", "year", "week_num")
+#     )
+#
+# modsdf %>% dplyr::filter(is.na(swe))
+# dplyr::mutate(
+#     month = lubridate::month(date)
+# ) %>%
+#     dplyr::group_by(month, basin) %>%
+#     dplyr::mutate(
+#         swe = impute_mean(swe)
+#     ) %>%
+#     dplyr::ungroup() %>%
+#     dplyr::select(-month) %>%
+#     dplyr::mutate(
+#         out = dplyr::case_when(
+#             out_pct > 0 ~ "1",
+#             TRUE        ~ "0"
+#         ),
+#         out = factor(out, levels = c("1", "0"))
+#     ) %>%
+#     dplyr::relocate(out, .after = out_pct)
 
 
 

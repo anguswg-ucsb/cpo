@@ -100,6 +100,18 @@ if(file.exists(weekly_call_path)) {
     }
 
 }
+# wr_gnis
+# aoi <- aoi_get()
+# cdssr::get_sw_stations(dist_shp[1, ], radius = 15)
+#
+# nrcs %>%
+#   dplyr::group_by(station_code) %>%
+#   dplyr::slice(1) %>%
+#   sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+#   mapview::mapview() + dist_shp
+# nrcs$station_code %>% unique()
+# dist_shp[1, ]
+# dataRetrieval::findNLDI(comid = coms$comid[9])
 
 # rm( wr_net, wr_gnis, wr_pts, gnis_flines)
 # # ######################################################################
