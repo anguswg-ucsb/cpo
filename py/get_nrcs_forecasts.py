@@ -1,3 +1,5 @@
+# Credit: Dillon Ragar
+
 import zeep
 from zeep import helpers
 import pandas as pd
@@ -69,14 +71,13 @@ def nrcs_fx_date_request(
 
     return df
 
-
+# pull together list of all station codes in Colorado
 stations = client.service.getStations(
     stateCds = "CO",
     networkCds = "USGS",
     logicalAnd = True
 )
 
-import pandas as pd
 
 def get_forecast_data(station_codes, start_date, end_date, forecast_period, element_code, network):
     all_fcsts = []
@@ -104,6 +105,7 @@ def get_forecast_data(station_codes, start_date, end_date, forecast_period, elem
 
     return df
 
+# get all forecasts for all sites in colorado 
 forecasts = get_forecast_data(
     station_codes=stations,
     element_code="SRVO", # stream volume
