@@ -22,6 +22,16 @@ model_data_path <- "data/model_data.rds"
 # district shape path
 district_path <- "data/water_districts_simple.geojson"
 
+# forecasts_df$wdid %>% unique() %>% length()
+# week_calls$wdid %>% unique() %>% length()
+
+# forecasts_df %>%
+#     dplyr::filter(wdid %in% unique(week_calls$wdid)) %>%
+#     .$wdid %>%
+#     unique() %>%
+#     length()
+
+
 if(file.exists(model_data_path)) {
 
     message(paste0(

@@ -39,8 +39,8 @@ if(file.exists(weekly_call_path) & file.exists(monthly_call_path)) {
   # read in call analysis data
   month_calls <- readRDS(monthly_call_path)
 
-  # read in daily calls data
-  daily_calls <- readRDS(call_save_path)
+  # # read in daily calls data
+  # daily_calls <- readRDS(call_save_path)
 
 
 } else {
@@ -73,7 +73,7 @@ if(file.exists(weekly_call_path) & file.exists(monthly_call_path)) {
     saveRDS(week_calls, weekly_call_path)
     saveRDS(month_calls, monthly_call_path)
 
-    # rm(daily_calls)
+    rm(daily_calls)
 
   } else {
 
@@ -116,7 +116,7 @@ if(file.exists(weekly_call_path) & file.exists(monthly_call_path)) {
     saveRDS(month_calls, monthly_call_path)
 
 
-    # rm(daily_calls)
+    rm(daily_calls)
 
     }
 
