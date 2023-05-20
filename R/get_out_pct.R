@@ -12,8 +12,10 @@ source("R/get_gnis_flines.R")
 source("R/utils.R")
 
 # path to save call analysis data
-call_save_path   <- "data/wdid_call_analysis.rds"
-weekly_call_path <- "data/wdid_call_analysis_weekly.rds"
+call_save_path    <- "data/wdid_call_analysis.rds"
+# weekly_call_path  <- "data/wdid_call_analysis_weekly.rds"
+weekly_call_path  <- "data/wdid_call_analysis_week.rds"
+monthly_call_path <- "data/wdid_call_analysis_month.rds"
 
 # start and end dates
 start_date = "1980-01-01"
@@ -23,7 +25,7 @@ end_date   = "2023-01-01"
 api_key = NULL
 
 # load and go get call analysis data
-if(file.exists(weekly_call_path)) {
+if(file.exists(weekly_call_path) & file.exists(monthly_call_path)) {
 
   message(paste0(
     "Reading weekly call data: ",
@@ -33,7 +35,12 @@ if(file.exists(weekly_call_path)) {
   # read in call analysis data
   week_calls <- readRDS(weekly_call_path)
   # call_df <- readRDS(weekly_call_path)
-  # calls_df <- readRDS(call_save_path)
+
+  # read in call analysis data
+  month_calls <- readRDS(monthly_call_path)
+
+  # read in daily calls data
+  daily_calls <- readRDS(call_save_path)
 
 
 } else {
@@ -47,26 +54,31 @@ if(file.exists(weekly_call_path)) {
     ))
 
     # read in call analysis data
-    call_df <- readRDS(call_save_path)
+    daily_calls <- readRDS(call_save_path)
 
     message(paste0("Calculating weekly call data..."))
 
     # calculate weekly average calls data
-    week_calls <- aggreg_calls(df = call_df)
+    week_calls <- aggreg_calls2(df = daily_calls)
+
+    # calculate weekly average calls data
+    month_calls <- aggreg_calls_month(df = week_calls)
 
     message(paste0(
-      "Saving weekly call data: ",
-      "\n---> ", weekly_call_path
+      "Saving weekly/monthly call data: ",
+      "\n---> ", weekly_call_path,
+      "\n---> ", monthly_call_path
     ))
 
     saveRDS(week_calls, weekly_call_path)
+    saveRDS(month_calls, monthly_call_path)
 
-    rm(call_df)
+    # rm(daily_calls)
 
   } else {
 
 
-    call_df <- get_call_data(
+    daily_calls <- get_call_data(
       wdid_df    = wr_gnis,
       start_date = start_date,
       end_date   = end_date,
@@ -79,27 +91,44 @@ if(file.exists(weekly_call_path)) {
     ))
 
     # save daily call data
-    saveRDS(call_df, call_save_path)
+    saveRDS(daily_calls, call_save_path)
 
     message(paste0("Calculating weekly call data..."))
 
     # calculate weekly average calls data
-    week_calls <- aggreg_calls(df = call_df)
+    week_calls <- aggreg_calls2(df = daily_calls)
+
+    # calculate weekly average calls data
+    month_calls <- aggreg_calls_month(df = week_calls)
 
     message(paste0(
-      "Saving weekly call data: ",
+      "Saving weekly/monthly call data: ",
       "\n---> ", weekly_call_path,
-      "\n---> ",  gsub(".rds", ".csv", weekly_call_path)
+      "\n---> ",  gsub(".rds", ".csv", weekly_call_path),
+      "\n---> ", monthly_call_path
     ))
 
+    # weekly save
     saveRDS(week_calls, weekly_call_path)
     readr::write_csv(week_calls,    gsub(".rds", ".csv", weekly_call_path))
 
-    rm(call_df)
+    # monthly save
+    saveRDS(month_calls, monthly_call_path)
+
+
+    # rm(daily_calls)
 
     }
 
 }
+
+
+
+
+# # ######################################################################
+# # ######################################################################
+# # ######################################################################
+
 # wr_gnis
 # aoi <- aoi_get()
 # cdssr::get_sw_stations(dist_shp[1, ], radius = 15)

@@ -107,13 +107,12 @@ def get_forecast_data(station_codes, start_date, end_date, forecast_period, elem
 
 # get all forecasts for all sites in colorado 
 forecasts = get_forecast_data(
-    station_codes=stations,
-    element_code="SRVO", # stream volume
-    forecast_period="APR-JUL",
-    start_date="1970-04-01",
-    end_date="2023-05-02",
-    network = "USGS"
+    station_codes   = stations,
+    element_code    = "SRVO", # stream volume
+    forecast_period = "APR-JUL",
+    start_date      = "1970-01-01",
+    end_date        = "2023-10-01",
+    network         = "USGS"
     )
-
 # save out forecasts data
 forecasts.to_csv("data/nrcs/nrcs_forecasts.csv")

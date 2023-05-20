@@ -596,6 +596,89 @@ aggreg_snotel <- function(
 impute_mean <- function(x) {
   replace(x, is.na(x), mean(x, na.rm = TRUE))
 }
+
+process_forecasts <- function(pts_path, nrcs_path) {
+
+  # read in water rights points
+  wr_pts <- readRDS(pts_path)
+
+  # read in NRCS forecasts data
+  nrcs   <- readr::read_csv(nrcs_path)
+
+  # remove missing dates, select relevant columns, and 50/90% Exceedance probability.
+  nrcs <-
+    nrcs %>%
+    dplyr::filter(!is.na(calculationDate)) %>%
+    dplyr::select(
+      station_code,
+      pub_date   = publicationDate,
+      date       = calculationDate,
+      ep         = exceedenceProbabilities,
+      exceed_val = exceedenceValues,
+      longitude,
+      latitude
+    ) %>%
+    dplyr::group_by(station_code, date) %>%
+    dplyr::filter(ep %in% c(50, 90)) %>%
+    tidyr::pivot_wider(
+      id_cols     = c(station_code, date, longitude,latitude ),
+      names_from  = ep,
+      values_from = exceed_val
+    ) %>%
+    stats::setNames(c("station_code", "date", "longitude", "latitude", "ep_50", "ep_90")) %>%
+    dplyr::mutate(
+      ep_90 = dplyr::case_when(
+        is.na(ep_90) ~ ep_50,
+        TRUE         ~ ep_90
+      )
+    ) %>%
+    dplyr::ungroup()
+
+  # extract unique NRCS forecast points
+  nrcs_pts <-
+    nrcs %>%
+    dplyr::group_by(station_code) %>%
+    dplyr::slice(1) %>%
+    sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      near_id = 1:n()
+    )
+
+  # nearest forecast points to each water right point
+  near_pts <- sf::st_nearest_feature(wr_pts, nrcs_pts)
+
+  # add forecast point indexes as column
+  wr_pts$near_id <- near_pts
+
+  # join Water rights points with NRCS points
+  fx_join <-
+    wr_pts %>%
+    dplyr::left_join(
+      dplyr::select(sf::st_drop_geometry(nrcs_pts), station_code, near_id),
+      by = c("near_id")
+    ) %>%
+    sf::st_drop_geometry() %>%
+    dplyr::select(district, wdid, gnis_id, approp_date = appropriation_date, station_code)
+
+  # join forecasts data with WDID/GNIS ID/ DISTRICT data
+  wdid_forecasts <-
+    nrcs %>%
+    dplyr::left_join(
+      fx_join,
+      relationship = "many-to-many",
+      by           = "station_code"
+    ) %>%
+    dplyr::mutate(
+      date = as.Date(date)
+    ) %>%
+    dplyr::select(district, wdid, gnis_id, approp_date, station_code, date, ep_50, ep_90)
+
+  return(wdid_forecasts)
+
+}
+
+
 # define a function to crop and mask a single SpatRaster for a single polygon
 #' Internal function used in get_climate
 #'
@@ -819,6 +902,188 @@ rectify_out_pct <- function(df) {
 }
 
 # aggregate the output dataframe from get_call_data from daily timesteps to a weekly timestep to align with average weekly climate data
+aggreg_calls2 <- function(df, rectify = TRUE) {
+
+  if(rectify) {
+
+    message(paste0("Rectifying out of priority percent..."))
+
+    df <- rectify_out_pct(df)
+  }
+
+  # Convert the sequence to a data frame
+  date_df <-
+    data.frame(
+      # date = seq(as.Date("1979-12-31"), as.Date("2022-12-26"), by = "7 days")
+      date = seq(as.Date("1979-12-31"), Sys.Date(), by = "7 days")
+      # date = seq(as.Date(min(out$analysis_date)), Sys.Date(), by = "7 days")
+    ) %>%
+    dplyr::mutate(
+      year     = lubridate::year(date),
+      week_num = strftime(date, format = "%V")
+    )
+
+  message(paste0("Calculating weekly out of priority data..."))
+
+  # deal with WDIDs with multiple rows of data for the same date
+  sub_calls <-
+    df %>%
+    dplyr::select(
+      datetime,
+      district,
+      wdid = analysis_wdid,
+      approp_date =  wdid_approp_date,
+      wdid_gnis_id,
+      out_pct = analysis_out_of_priority_percent_of_day,
+      wdid_structure_name, wdid_structure_type, seniority
+    ) %>%
+    dplyr::group_by(wdid, datetime) %>%
+    dplyr::mutate(
+      out_pct = mean(out_pct, na.rm = T)
+    ) %>%
+    dplyr::slice(1) %>%
+    dplyr::ungroup()
+
+  # extract list of GNIS ID to mask out to only WDIDs of interest
+  wdid_mask <-
+    sub_calls %>%
+    dplyr::mutate(
+      year      = lubridate::year(datetime),
+      out_count = dplyr::case_when(
+        out_pct > 0 ~ 1,
+        TRUE ~ 0
+      )
+    ) %>%
+    dplyr::group_by(year, district, wdid_gnis_id) %>%
+    dplyr::mutate(
+      out_pct   = mean(out_pct, na.rm = T),
+      out_count = sum(out_count, na.rm = T)
+    ) %>%
+    dplyr::slice(1) %>%
+    dplyr::ungroup() %>%
+    dplyr::group_by(district, wdid_gnis_id) %>%
+    dplyr::summarise(
+      out_count = mean(out_count, na.rm = T)
+    ) %>%
+    dplyr::group_by(district) %>%
+    dplyr::slice(
+      which.max(out_count)
+    ) %>%
+    dplyr::ungroup()
+
+  # filter down to GNIS IDs of interest
+  sub_calls <- dplyr::filter(sub_calls, wdid_gnis_id %in% unique(wdid_mask$wdid_gnis_id))
+
+  # get the max and min priorities by GNIS ID
+  priorities <-
+    sub_calls %>%
+    dplyr::mutate(
+      approp_date = as.Date(approp_date)
+    ) %>%
+    dplyr::group_by(district) %>%
+    dplyr::slice(
+      which.max(approp_date),
+      which.min(approp_date)
+    ) %>%
+    dplyr::ungroup()
+
+  # filter calls down to most senior and most junior on most out of priority stretch of river (GNIS ID)
+  sub_calls <- dplyr::filter(sub_calls, wdid %in% unique(priorities$wdid))
+
+  # Final weekly weekly data aggregation
+  # Output variables:
+    # out of percent priority weekly average
+    # Binary indicator "out" in or out of priority week
+    # count of days out of priority that week
+    # count of days out of priority that month
+  sub_calls <-
+    sub_calls %>%
+    dplyr::mutate(
+      year     = lubridate::year(datetime),
+      week_num = strftime(datetime, format = "%V")
+      ) %>%
+    dplyr::left_join(
+      date_df,
+      by = c("year", "week_num")
+      ) %>%
+    dplyr::group_by(district, date, wdid, wdid_gnis_id, seniority, approp_date  ) %>%
+    dplyr::mutate(
+      out_count = dplyr::case_when(
+        out_pct > 0 ~ 1,
+        TRUE ~ 0
+      ),
+      mon_year  = paste0(lubridate::month(datetime), "_", lubridate::year(datetime))
+    ) %>%
+    dplyr::group_by(district, mon_year, wdid) %>%
+    dplyr::mutate(
+      out_count_month = sum(out_count, na.rm = T)
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(-mon_year) %>%
+    dplyr::group_by(district, date, wdid, wdid_gnis_id, seniority, approp_date  ) %>%
+    dplyr::mutate(
+      out_count = sum(out_count, na.rm = T),
+      out_pct   = mean(out_pct, na.rm = T)
+    ) %>%
+    dplyr::slice(1) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      out = ifelse(out_pct > 0, 1, 0)
+    ) %>%
+    dplyr::select(district,
+                  date, wdid,
+                  gnis_id     = wdid_gnis_id,
+                  approp_date,
+                  seniority,
+                  out_pct,
+                  out,
+                  out_count_week = out_count,
+                  out_count_month
+                  )
+
+
+  return(sub_calls)
+
+}
+
+# Takes in weekly call data calculations as inputs and calculates monthly data values
+aggreg_calls_month <- function(df) {
+
+  message(paste0("Calculating monthly out of priority data..."))
+
+  out_mon <-
+    df %>%
+    # week_calls %>%
+    dplyr::filter(!is.na(date)) %>%
+    dplyr::mutate(
+      year      = lubridate::year(date),
+      month     = lubridate::month(date),
+      mon_year  = paste0(lubridate::month(date), "_", lubridate::year(date))
+    ) %>%
+    dplyr::group_by(district,mon_year, wdid) %>%
+    dplyr::mutate(
+      out_pct = mean(out_pct, na.rm = T)
+    ) %>%
+    dplyr::slice(1) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      date = as.Date(paste0(year, "-", month, "-01")),
+      out_count_month = dplyr::case_when(
+        out_count_month > 31 ~ 30,
+        TRUE                 ~ out_count_month
+        ),
+      out = dplyr::case_when(
+        out_pct > 0 ~ 1,
+        TRUE        ~ 0
+        )
+      ) %>%
+    dplyr::select(-out_count_week, -mon_year,  -month, -year)
+
+  return(out_mon)
+
+}
+
+# aggregate the output dataframe from get_call_data from daily timesteps to a weekly timestep to align with average weekly climate data
 aggreg_calls <- function(df, rectify = TRUE) {
 
   if(rectify) {
@@ -848,17 +1113,12 @@ aggreg_calls <- function(df, rectify = TRUE) {
                   out_pct = analysis_out_of_priority_percent_of_day,
                   wdid_approp_date, wdid_structure_name, wdid_structure_type, seniority
     )  %>%
-    # dplyr::select(datetime, district,
-    #               gnis_id = wdid_gnis_id,
-    #               seniority,
-    #               wdid = analysis_wdid,
-    #               priority_wdid,
-    #               wdid_priority_date = wdid_approp_date,
-    #               priority_date = priority_date,
-    #               out_pct = analysis_out_of_priority_percent_of_day
-    # ) %>%
-    # dplyr::filter(wdid_gnis_id %in% c("204805", "1385432", "188856")) %>%
-    # dplyr::filter(wdid == "6603301") %>%
+    # dplyr::filter(wdid_gnis_id %in% c("204805", "1385432")) %>%
+    # dplyr::filter(wdid == "1803001") %>%
+    dplyr::group_by(district, datetime, wdid, wdid_gnis_id, seniority, wdid_approp_date) %>%
+    dplyr::summarise(
+      out_pct = mean(out_pct, na.rm = T)
+      ) %>%
     dplyr::mutate(
       year     = lubridate::year(datetime),
       week_num = strftime(datetime, format = "%V")
@@ -868,7 +1128,14 @@ aggreg_calls <- function(df, rectify = TRUE) {
       by = c("year", "week_num")
     ) %>%
     dplyr::group_by(district, date, wdid, wdid_gnis_id, seniority, wdid_approp_date) %>%
+    dplyr::mutate(
+      out_count = dplyr::case_when(
+        out_pct > 0 ~ 1,
+        TRUE ~ 0
+      )
+    ) %>%
     dplyr::summarise(
+      out_count = sum(out_count, na.rm = T),
       out_pct = mean(out_pct, na.rm = T)
     ) %>%
     dplyr::ungroup() %>%
@@ -877,7 +1144,8 @@ aggreg_calls <- function(df, rectify = TRUE) {
                   gnis_id     = wdid_gnis_id,
                   approp_date = wdid_approp_date,
                   seniority,
-                  out_pct
+                  out_pct,
+                  out_count
                   )
 
   return(weekly_calls)
