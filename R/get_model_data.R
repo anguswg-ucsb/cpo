@@ -16,8 +16,11 @@ source("R/get_snotel.R")
 source("R/get_out_pct.R")
 source("R/get_nrcs_forecasts.R")
 
-# save path
+# weekly model data save path
 model_data_path <- "data/model_data.rds"
+
+# monthly model data save path
+month_data_path <- "data/model_month_data.rds"
 
 # district shape path
 district_path <- "data/water_districts_simple.geojson"
@@ -32,21 +35,25 @@ district_path <- "data/water_districts_simple.geojson"
 #     length()
 
 
-if(file.exists(model_data_path)) {
+if(file.exists(model_data_path) & file.exists(month_data_path)) {
 
     message(paste0(
         "Reading model data: ",
-        "\n---> ", model_data_path
+        "\n---> ", model_data_path,
+        "\n---> ", month_data_path
     ))
 
-    # get climate gridMET
+    # read in weekly model data
     mod_df <- readRDS(model_data_path)
+
+    # read in monthly model data
+    mod_month <- readRDS(month_data_path)
 
 } else {
 
     message(paste0("Joining climate and call analysis data"))
 
-    # join climate, snotel, and out of priority data
+    # join weekly climate, SNOTEL, out of priority calls, and NRCS forecasts data
     mod_df <-
         week_calls %>%
         dplyr::left_join(
@@ -72,107 +79,94 @@ if(file.exists(model_data_path)) {
             by = c("district", "date")
         ) %>%
         dplyr::filter(!is.na(swe), !is.na(mar_swe), !is.na(apr_swe), !is.na(may_swe)) %>% # remove missing SWE values
-        # dplyr::mutate(
-        #     month = lubridate::month(date)
-        # ) %>%
-        # dplyr::group_by(month, basin, district) %>%
-        # dplyr::mutate(
-        #     dplyr::across(contains("swe"), impute_mean)
-        #     # swe = impute_mean(swe)
-        # ) %>%
         dplyr::ungroup() %>%
-        # dplyr::select(-month) %>%
         dplyr::mutate(
-            out = dplyr::case_when(
-                out_pct > 0 ~ "1",
-                TRUE        ~ "0"
-            ),
-            out = factor(out, levels = c("1", "0"))
-        ) %>%
-        dplyr::relocate(out, .after = out_pct)
-
-
-
-        dplyr::select(
-            dplyr::mutate(
-                forecasts_df,
-                mon_year  = paste0(lubridate::month(date, label = T), "_",  lubridate::year(date))
-                ),
-        district, wdid, mon_year, ep_50, ep_90
-        )
-
-    mod_df2 <-
-        mod_df %>%
-        dplyr::mutate(
-            mon_year  = paste0(lubridate::month(date, label = T), "_",  lubridate::year(date))
+            month_date = as.Date(paste0(format(date, "%Y-%m"), "-01"))
         ) %>%
         dplyr::left_join(
-            dplyr::select(
-                dplyr::mutate(
-                    forecasts_df,
-                    mon_year  = paste0(lubridate::month(date, label = T), "_",  lubridate::year(date))
-                ),
-                district, wdid, mon_year, ep_50, ep_90
-            ),
-            by = c("district", "wdid", "mon_year")
+            dplyr::select(forecasts_df, district, wdid, station_code, month_date = date, ep_50, ep_90),
+            by = c("district", "wdid", "month_date")
         ) %>%
-        dplyr::relocate(mon_year, ep_50, ep_90)
-    max(forecasts_df$date)
+        dplyr::relocate(basin, district, date, wdid, gnis_id, station_code)
 
-    tmp <-
-        mod_df2 %>%
-        dplyr::filter(!is.na(ep_50)) %>%
-        dplyr::select(basin, district, gnis_id, wdid, approp_date, seniority, date, out_pct, out, swe, ep_50, ep_90)
-
-    tmp %>%
-        dplyr::group_by(district, seniority, date) %>%
-        dplyr::summarise(
-            dplyr::across(c(out_pct, swe, ep_50, ep_90), \(x) mean(x, na.rm = TRUE))
-        )
-
-    daily_calls$datetime[1]
-    month_count <-
-        daily_calls %>%
-        dplyr::slice(40000:50000) %>%
-        dplyr::mutate(
-            # date = as.Date(analysis_date),
-            mon_year  = paste0(lubridate::month(datetime, label = T), "_",  lubridate::year(datetime))
-        ) %>%
-        dplyr::mutate(
-            out = dplyr::case_when(
-                analysis_out_of_priority_percent_of_day > 0 ~ 1,
-                TRUE                                        ~ 0
+    # Join monthly calls, monthly SWE, and monthly forecasts data into single dataset
+    mod_month <-
+        aggreg_calls_month(week_calls) %>%
+        dplyr::left_join(
+                na.omit(
+                    dplyr::mutate(
+                        dplyr::ungroup(
+                            dplyr::summarise(
+                                dplyr::group_by(
+                                    dplyr::mutate(
+                                        snotel_df,
+                                        date = paste0(format(date, "%Y-%m"), "-01")
+                                    ),
+                                    basin, district, date
+                                ),
+                                dplyr::across(where(is.numeric), \(x) mean(x, na.rm  = TRUE))
+                            )
+                        ),
+                        date = as.Date(date)
+                    )
                 ),
-            month = format(datetime, "%Y-%m")
-            ) %>%
-        dplyr::select(district,wdid = analysis_wdid, seniority, mon_year, month, out_pct = analysis_out_of_priority_percent_of_day, out) %>%
-        # dplyr::group_by(district, wdid, seniority, mon_year) %>%
-        dplyr::group_by(district, wdid, seniority, month) %>%
-        dplyr::summarise(total_occurrences = sum(out))
-        # dplyr::add_count()
-        dplyr::summarise(
-            out_pct   = mean(out_pct, na.rm = T),
-            out_count = sum(out, na.rm = T)
-        )
-        dplyr::add_count() %>%
-        dplyr::select(district, seniority, mon_year, out_pct = analysis_out_of_priority_percent_of_day, out, n)
-        dplyr::group_by(district, seniority, mon_year) %>%
-        dplyr::add_count()
-        dplyr::summarise(
-            out_pct   = mean(out_pct, na.rm = T),
-            out_count =
-        )
+            by = c("district", "date")
+        ) %>%
+        # dplyr::filter(date %in% unique(forecasts_df$date)) %>%
+        dplyr::left_join(
+            dplyr::select(forecasts_df, district, wdid, station_code, date, ep_50, ep_90),
+            by = c("district", "wdid", "date")
+        ) %>%
+        dplyr::relocate(basin, district, date, wdid, gnis_id, station_code)
+
+    # # calculate monthly SWE data
+    # month_snow <- na.omit(
+    #                 dplyr::mutate(
+    #                     dplyr::ungroup(
+    #                         dplyr::summarise(
+    #                             dplyr::group_by(
+    #                                 dplyr::mutate(
+    #                                     snotel_df,
+    #                                     date = paste0(format(date, "%Y-%m"), "-01")
+    #                                     ),
+    #                                 basin, district, date
+    #                                 ),
+    #                             dplyr::across(where(is.numeric), \(x) mean(x, na.rm  = TRUE))
+    #                             )
+    #                         ),
+    #                     date = as.Date(date)
+    #                     )
+    #                 )
+    #
+    # # calculate monthly calls data
+    # month_calls <- aggreg_calls_month(week_calls)
+    #
+    # # Join monthly calls, monthly SWE, and monthly forecasts data into single dataset
+    # mod_month <-
+    #     month_calls %>%
+    #     dplyr::left_join(
+    #         dplyr::select(month_snow, -basin),
+    #         by = c("district", "date")
+    #     ) %>%
+    #     dplyr::filter(date %in% unique(forecasts_df$date)) %>%
+    #     dplyr::left_join(
+    #         dplyr::select(forecasts_df, district, wdid, station_code, date, ep_50, ep_90),
+    #         by = c("district", "wdid", "date")
+    #     )
+
     message(paste0(
         "Saving model data: ",
-        "\n---> ", model_data_path
+        "\n---> ", model_data_path,
+        "\n---> ", month_data_path
     ))
 
     # save path
     saveRDS(mod_df, model_data_path)
+    saveRDS(mod_month, month_data_path)
 
 }
 
-rm(clim_ts, wr_net, dist_shp, wr_pts, week_calls, gnis_flines, snotel_df,
+rm(clim_ts, wr_net, dist_shp, wr_pts, week_calls, forecasts_df, gnis_flines, snotel_df,
    wr_gnis, districts_path, end_date, start_date, site_path, gnis_path,
    api_key, weekly_call_path, wr_net_path, wr_pts_path, swe_path, uwdids_path,
    climate_path, call_save_path, wr_gnis_path)
