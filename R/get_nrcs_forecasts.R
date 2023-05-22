@@ -23,7 +23,7 @@ wr_path <-   "data/rights_by_gnis_id.rds"
 
 # path to save output to
 forecasts_path <- "data/wdid_nrcs_forecasts.rds"
-
+nrcs <- readr::read_csv("data/nrcs/nrcs_forecasts.csv")
 # --------------------
 # ---- Read data -----
 # --------------------

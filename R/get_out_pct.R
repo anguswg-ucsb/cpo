@@ -18,11 +18,11 @@ weekly_call_path  <- "data/wdid_call_analysis_week.rds"
 monthly_call_path <- "data/wdid_call_analysis_month.rds"
 
 # start and end dates
-start_date = "1980-01-01"
-end_date   = "2023-01-01"
+start_date <- "1980-01-01"
+end_date   <- "2023-01-01"
 
 # API token for CDSS rest services, provide token if expecting to go over guest API limits
-api_key = NULL
+api_key <- NULL
 
 # load and go get call analysis data
 if(file.exists(weekly_call_path) & file.exists(monthly_call_path)) {

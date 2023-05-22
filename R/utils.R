@@ -591,7 +591,307 @@ aggreg_snotel <- function(
   return(expanded_df)
 
 }
+get_snotel_peaks <- function(
+    site_df,
+    # district_path,
+    start_lag = 3,
+    end_lag   = 12
+) {
+  # site_df <-
+  #   snotel_sites %>%
+  #   dplyr::filter(district == "02")
+  # path to snotel data
+  # snotel_path <- "data/all_snotel_co.rds"
 
+  # district shape path
+  # district_path <- "data/water_districts_simple.geojson"
+
+  # site_path <- "data/snotel_sites.csv"
+
+  # water districts shape
+  # dists   <- sf::read_sf(district_path)
+
+  # read in snotel data
+  # site_df <- readr::read_csv(site_path)
+
+  # # read in snotel data
+  # site_df <- readr::read_csv(site_path)
+  # missing_sites <- readr::read_csv(missing_sites_path)
+  # dists2 <- sf::st_join(
+  #       dists,
+  #       sf::st_as_sf(site_df, coords = c("lon", "lat"), crs = 4326)
+  #     ) %>%
+  #     dplyr::filter(!is.na(site_id)) %>%
+  #     sf::st_drop_geometry() %>%
+  #     dplyr::rename(district = DISTRICT) %>%
+  #     dplyr::group_by(district) %>%
+  #     dplyr::summarise(
+  #       site_id = paste(site_id, collapse = ", ")
+  #     ) %>%
+  #     dplyr::bind_rows(missing_sites) %>%
+  #     dplyr::left_join(
+  #       dplyr::select(
+  #         sf::st_drop_geometry(dists),
+  #         basin = BASIN,
+  #         district = DISTRICT
+  #       ),
+  #       by = "district"
+  #     ) %>%
+  #     dplyr::relocate(basin, district, site_id)
+  #   readr::write_csv(dists2, "data/district_snotel_table.csv")
+  #   sf::st_write(site_pts2, "snotel_sites_pts.gpkg")
+  #   sf::st_write(dists2, "districts_with_snotel_ids.gpkg")
+  #   dists2 %>%
+  #     dplyr::mutate(
+  #       needs_snotel = dplyr::case_when(
+  #         is.na(site_id) ~ "YES",
+  #         TRUE ~ "NO")) %>%
+  #     ggplot2::ggplot() +
+  #     ggplot2::geom_sf(ggplot2::aes(fill = needs_snotel)) +
+  #     ggplot2::geom_sf(data = site_pts2)
+  # site_df %>%
+  #   sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) %>%
+  #   mapview::mapview() + dists
+
+  # Convert the sequence to a data frame
+  date_df <-
+    data.frame(
+      date = seq(as.Date("1979-12-31"), Sys.Date(), by = "7 days")
+    ) %>%
+    dplyr::mutate(
+      year      = lubridate::year(date),
+      week_num  = strftime(date, format = "%V"),
+      year_week = paste0(year, "_", week_num)
+    )
+
+  snotel_df <- lapply(1:nrow(site_df), function(i) {
+
+    logger::log_info("Getting district {unique(site_df[i, ]$district)} snotel data...")
+
+    # unique(site_df[i, ]$basin)
+    ids <- tidyr::separate_rows(site_df[i, ], site_id, sep = ", ")$site_id
+
+    snotel <- go_get_snotel_data(site_ids = ids) %>%
+      dplyr::mutate(
+        basin    = unique(site_df[i, ]$basin),
+        district = unique(site_df[i, ]$district)
+      )
+
+    snotel
+
+  })
+
+  # average SWE across each districts snotel sites and dates
+  snotel_df2 <-
+    snotel_df %>%
+    dplyr::bind_rows() %>%
+    dplyr::group_by(date, district, basin) %>%
+    dplyr::summarise(
+      swe = mean(snow_water_equivalent, na.rm =T)
+    ) %>%
+    dplyr::ungroup()
+
+  # snotel_df2 %>%
+
+  # impute missing (NA/NaN) values with mean across the basin for each date
+  # a handful of NAs persisted through this and so for that small amount,
+  # so we impute the mean across the whole state, the idea being
+  # that its such a small number of days so,
+  # we take a snapshot of general SWE conditions across the whole state use that to replace missing values
+  snotel_df2 <-
+    snotel_df2 %>%
+    dplyr::group_by(date, basin) %>%
+    dplyr::mutate(
+      swe  = ifelse(is.na(swe) |is.nan(swe), mean(swe, na.rm = TRUE), swe)
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::group_by(date) %>%
+    dplyr::mutate(
+      swe  = ifelse(is.na(swe) |is.nan(swe), mean(swe, na.rm = TRUE), swe)
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::rename(datetime = date)
+
+  # yearly peak swe
+  yearly_peak <-
+    snotel_df2 %>%
+    dplyr::mutate(
+      year = lubridate::year(datetime)
+    ) %>%
+    dplyr::group_by(district, year) %>%
+    dplyr::summarize(
+      peak_swe = max(swe, na.rm = T)
+    ) %>%
+    dplyr::ungroup()
+
+  may_peak <-
+    snotel_df2 %>%
+    dplyr::mutate(
+      year = lubridate::year(datetime),
+      month = lubridate::month(datetime, label = T),
+      day   =
+    ) %>%
+    dplyr::group_by(district, year) %>%
+    dplyr::filter(datetime == )
+    dplyr::summarize(
+      peak_swe = max(swe, na.rm = T)
+    ) %>%
+    dplyr::ungroup()
+  # join daily district SWE values w/ weekly date dataframe and calc avg swe per week per district
+  snotel_df <-
+    snotel_df %>%
+    dplyr::mutate(
+      # year     = lubridate::year(datetime),
+      # week_num = strftime(datetime, format = "%V"),
+      year_week = paste0(lubridate::year(datetime), "_",  strftime(datetime, format = "%V"))
+    ) %>%
+    dplyr::filter(year_week %in% unique(date_df$year_week)) %>%
+    dplyr::left_join(
+      date_df,
+      relationship = "many-to-many",
+      by           = c("year_week")
+      # by           = c("year", "week_num")
+    ) %>%
+    dplyr::group_by(basin, district, date) %>%
+    dplyr::summarise(
+      swe = mean(swe, na.rm =T)
+    ) %>%
+    dplyr::ungroup()
+  # dplyr::filter(!is.na(date))
+
+  # remove NAs in date column
+  snotel_df <- dplyr::filter(snotel_df, !is.na(date))
+
+  # get complete date range to fill out missing dates for some snotel sites
+  date_range <-
+    snotel_df %>%
+    # dplyr::filter(basin == "South Platte") %>%
+    dplyr::group_by(basin) %>%
+    dplyr::add_count() %>%
+    dplyr::ungroup() %>%
+    dplyr::slice_max(n) %>%
+    dplyr::select(date) %>%
+    dplyr::distinct()
+
+  expanded_df  <-
+    snotel_df %>%
+    tidyr::complete(district, date = date_range$date) %>%
+    dplyr::left_join(
+      dplyr::distinct(dplyr::select(snotel_df, basin2 = basin, district)),
+      by = "district"
+    ) %>%
+    dplyr::mutate(basin = ifelse(is.na(basin), basin2, basin)) %>%
+    dplyr::select(-basin2) %>%
+    dplyr::group_by(basin, date) %>%
+    dplyr::mutate(swe = ifelse(is.na(swe), mean(swe, na.rm = TRUE), swe)) %>%
+    dplyr::ungroup() %>%
+    dplyr::filter(!is.na(swe))
+
+  # # add lagged SWE value by basin, default lag is 3-12 month lags
+  # snotel_df2 <-
+  #   snotel_df2 %>%
+  #   dplyr::group_by(basin, district) %>%
+  #   timetk::tk_augment_lags(swe, .lags = seq(start_lag*4, end_lag*4, 4)) %>%
+  #   stats::setNames(
+  #     c("basin", "district", "date", "swe",
+  #       paste0("swe_lag_", seq(start_lag, end_lag), "_month"))
+  #   ) %>%
+  #   dplyr::ungroup() %>%
+  #   na.omit()
+
+  # # add monthly by year and basin
+  # snotel_df <-
+  #   snotel_df %>%
+  #   dplyr::mutate(
+  #     year  = lubridate::year(date)
+  #   ) %>%
+  #   dplyr::left_join(
+  #     na.omit(
+  #       tidyr::pivot_wider(
+  #         na.omit(
+  #           dplyr::mutate(
+  #             dplyr::ungroup(
+  #               dplyr::summarise(
+  #                 dplyr::group_by(
+  #                   dplyr::mutate(snotel_df,
+  #                                 month = lubridate::month(date, label = T),
+  #                                 year  = lubridate::year(date)
+  #                   ),
+  #                   basin, month, year
+  #                 ),
+  #                 swe = max(swe, na.rm = T)
+  #               )
+  #             ),
+  #             month = tolower(month)
+  #           )
+  #         ),
+  #         names_from  = "month",
+  #         names_glue  = "{month}_{.value}",
+  #         values_from = "swe"
+  #       )
+  #     ),
+  #     by = c("basin", "year")
+  #   ) %>%
+  #   dplyr::select(-year) %>%
+  #   dplyr::ungroup()
+
+  # calculate March, April, May peak SWE values
+  peaks <-
+    expanded_df %>%
+    dplyr::mutate(
+      month = lubridate::month(date, label = T),
+      year  = lubridate::year(date)
+    ) %>%
+    dplyr::group_by(basin, district, month, year) %>%
+    dplyr::summarise(
+      peak_swe = round(max(swe, na.rm = T), 4)
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::filter(month %in% c("Mar", "Apr", "May")) %>%
+    na.omit() %>%
+    dplyr::group_by(basin, district, year) %>%
+    tidyr::pivot_wider(
+      id_cols     = c(basin, district, year),
+      names_from  = month,
+      values_from = peak_swe
+    ) %>%
+    dplyr::ungroup() %>%
+    na.omit()
+
+
+  # cleanup names
+  names(peaks) <- c("basin", "district", "year",
+                    c(paste0(tolower(names(peaks))[!grepl("basin|district|year", tolower(names(peaks)))], "_swe")))
+
+  # add Peak March, April, May SWE
+  expanded_df <-
+    expanded_df %>%
+    dplyr::mutate(
+      year  = lubridate::year(date)
+    ) %>%
+    dplyr::left_join(
+      dplyr::select(peaks, -basin),
+      by = c("district", "year")
+    ) %>%
+    dplyr::relocate(basin, district, date, swe, mar_swe, apr_swe, may_swe) %>%
+    dplyr::select(-year) %>%
+    dplyr::mutate(dplyr::across(where(is.numeric), \(x) round(x, 3))) %>%
+    dplyr::mutate(
+      district = ifelse(district < 10, paste0("0", district), district)
+    )
+
+  # expanded_df %>%
+  #   dplyr::select(-swe) %>%
+  #   tidyr::pivot_longer(cols =contains("swe")) %>%
+  #   # tidyr::pivot_longer(cols =("swe")) %>%
+  #   dplyr::filter(basin == "South Platte") %>%
+  #   ggplot2::ggplot() +
+  #   ggplot2::geom_line(ggplot2::aes(x = date, y = value, color = name), size = 1) +
+  #   ggplot2::facet_wrap(~district)
+
+  return(expanded_df)
+
+}
 # impute missing values w/ mean
 impute_mean <- function(x) {
   replace(x, is.na(x), mean(x, na.rm = TRUE))
@@ -769,7 +1069,49 @@ get_call_data <- function(
   return(call_df)
 
 }
+# Define function to get call data
+get_call_data2 <- function(
+    wdid_df,
+    start_date,
+    end_date,
+    api_key = NULL
+) {
 
+  call_df <- lapply(1:nrow(wdid_df), function(i) {
+
+    message(paste0(i, "/", nrow(wdid_df)))
+
+    # GET request to CDSS API
+    tryCatch({
+      calls <- cdssr::get_call_analysis_wdid(
+        wdid       = wdid_df$wdid[i],
+        # admin_no   = wdid_df$admin_number[i],
+        admin_no   = "99999.00000",
+        start_date = start_date,
+        end_date   = end_date,
+        api_key    = api_key
+      ) %>%
+        dplyr::mutate(
+          district            = wdid_df$district[i],
+          wdid_gnis_id        = wdid_df$gnis_id[i],
+          water_source        = wdid_df$water_source[i],
+          wdid_approp_date    = wdid_df$appropriation_date[i],
+          # wdid_structure_name = wdid_df$structure_name[i],
+          # wdid_structure_type = wdid_df$structure_type[i],
+          wdid_admin_no       = wdid_df$admin_number[i]
+        )
+      calls
+    }, error = function(e) {
+
+      NULL
+    })
+
+  }) %>%
+    dplyr::bind_rows()
+
+  return(call_df)
+
+}
 
 # # Define function to get call data
 # get_call_data <- function(
@@ -885,6 +1227,19 @@ get_call_data <- function(
 
 rectify_out_pct <- function(df) {
 
+  # df <-
+  #   df %>%
+  #   dplyr::mutate(
+  #     priority_date = dplyr::case_when(
+  #       is.na(priority_date) ~ "2099-01-01",
+  #       TRUE                 ~ priority_date
+  #     ),
+  #     analysis_out_of_priority_percent_of_day = dplyr::case_when(
+  #       wdid_approp_date <= priority_date   ~ 0,
+  #       TRUE                                ~ analysis_out_of_priority_percent_of_day
+  #     )
+  #   )
+  # df2 <- dplyr::filter(daily_calls, analysis_wdid == "0100722")
   df <-
     df %>%
     dplyr::mutate(
@@ -897,6 +1252,13 @@ rectify_out_pct <- function(df) {
         TRUE                                ~ analysis_out_of_priority_percent_of_day
       )
     )
+    # dplyr::group_by(datetime, analysis_wdid) %>%
+    # dplyr::slice_min(analysis_out_of_priority_percent_of_day) %>%
+    # # dplyr::mutate(
+    # #   analysis_out_of_priority_percent_of_day = sum(analysis_out_of_priority_percent_of_day)
+    # # ) %>%
+    # # dplyr::slice(1) %>%
+    # dplyr::ungroup()
 
   return(df)
 }
@@ -909,6 +1271,7 @@ aggreg_calls2 <- function(df, rectify = TRUE) {
     message(paste0("Rectifying out of priority percent..."))
 
     df <- rectify_out_pct(df)
+    # daily_calls <- rectify_out_pct(dplyr::filter(daily_calls, district == "01"))
   }
 
   # Convert the sequence to a data frame
@@ -925,54 +1288,46 @@ aggreg_calls2 <- function(df, rectify = TRUE) {
 
   message(paste0("Calculating weekly out of priority data..."))
 
-  # deal with WDIDs with multiple rows of data for the same date
-  sub_calls <-
-    df %>%
-    dplyr::select(
-      datetime,
-      district,
-      wdid = analysis_wdid,
-      approp_date =  wdid_approp_date,
-      wdid_gnis_id,
-      out_pct = analysis_out_of_priority_percent_of_day,
-      wdid_structure_name, wdid_structure_type, seniority
-    ) %>%
-    dplyr::group_by(wdid, datetime) %>%
-    dplyr::mutate(
-      out_pct = mean(out_pct, na.rm = T)
-    ) %>%
-    dplyr::slice(1) %>%
-    dplyr::ungroup()
+  # GNIS ID: 180817
+  # WDIDs: "0100773", "0100722" ,"0100827"
 
-  # extract list of GNIS ID to mask out to only WDIDs of interest
-  wdid_mask <-
-    sub_calls %>%
-    dplyr::mutate(
-      year      = lubridate::year(datetime),
-      out_count = dplyr::case_when(
-        out_pct > 0 ~ 1,
-        TRUE ~ 0
-      )
-    ) %>%
-    dplyr::group_by(year, district, wdid_gnis_id) %>%
-    dplyr::mutate(
-      out_pct   = mean(out_pct, na.rm = T),
-      out_count = sum(out_count, na.rm = T)
-    ) %>%
-    dplyr::slice(1) %>%
-    dplyr::ungroup() %>%
-    dplyr::group_by(district, wdid_gnis_id) %>%
-    dplyr::summarise(
-      out_count = mean(out_count, na.rm = T)
-    ) %>%
-    dplyr::group_by(district) %>%
-    dplyr::slice(
-      which.max(out_count)
-    ) %>%
-    dplyr::ungroup()
+  # length(unique(sub_calls$wdid))
+  # sub_calls %>%
+  #   dplyr::filter(datetime >= "2001-01-01", datetime <= "2004-01-01") %>%
+  #   ggplot2::ggplot() +
+  #   ggplot2::geom_line(ggplot2::aes(x = datetime, y = out_pct)) +
+  #   ggplot2::facet_wrap(seniority~wdid)
+    # ggplot2::facet_grid(wdid~seniority)
+
+  # # extract list of GNIS ID to mask out to only WDIDs of interest
+  # wdid_mask <-
+  #   sub_calls %>%
+  #   dplyr::mutate(
+  #     year      = lubridate::year(datetime),
+  #     out_count = dplyr::case_when(
+  #       out_pct > 0 ~ 1,
+  #       TRUE ~ 0
+  #     )
+  #   ) %>%
+  #   dplyr::group_by(year, district, wdid_gnis_id) %>%
+  #   dplyr::mutate(
+  #     out_pct   = mean(out_pct, na.rm = T),
+  #     out_count = sum(out_count, na.rm = T)
+  #   ) %>%
+  #   dplyr::slice(1) %>%
+  #   dplyr::ungroup() %>%
+  #   dplyr::group_by(district, wdid_gnis_id) %>%
+  #   dplyr::summarise(
+  #     out_count = mean(out_count, na.rm = T)
+  #   ) %>%
+  #   dplyr::group_by(district) %>%
+  #   dplyr::slice(
+  #     which.max(out_count)
+  #   ) %>%
+  #   dplyr::ungroup()
 
   # filter down to GNIS IDs of interest
-  sub_calls <- dplyr::filter(sub_calls, wdid_gnis_id %in% unique(wdid_mask$wdid_gnis_id))
+  # sub_calls <- dplyr::filter(sub_calls, wdid_gnis_id %in% unique(wdid_mask$wdid_gnis_id))
 
   # get the max and min priorities by GNIS ID
   priorities <-
@@ -980,7 +1335,7 @@ aggreg_calls2 <- function(df, rectify = TRUE) {
     dplyr::mutate(
       approp_date = as.Date(approp_date)
     ) %>%
-    dplyr::group_by(district) %>%
+    dplyr::group_by(district, wdid_gnis_id) %>%
     dplyr::slice(
       which.max(approp_date),
       which.min(approp_date)

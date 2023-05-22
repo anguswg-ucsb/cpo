@@ -21,21 +21,57 @@ source("R/utils.R")
   # "19", "21", "22", "31", "38",
   # "64", "68", "70", "72"
   #          )
-id_mask <-
-  # out_df <-
+
+mod_month %>%
+  dplyr::filter(!is.na(station_code))
+# start_lag = 1
+# end_lag = 5
+
+junior_week <-
   mod_df %>%
-  dplyr::filter(seniority != "median") %>%
-  na.omit() %>%
-  dplyr::group_by(basin, district) %>%
+  dplyr::filter(seniority == "junior") %>%
+  # dplyr::filter(!is.na(station_code)) %>%
   dplyr::mutate(
-    is_senior = dplyr::case_when(
-      approp_date == max(approp_date) ~ TRUE,
-      TRUE                            ~ FALSE
-    )
+    year = lubridate::year(date)
   ) %>%
-  dplyr::filter(is_senior == TRUE) %>%
-  .$wdid %>%
-  unique()
+  dplyr::group_by(district, year) %>%
+  timetk::tk_augment_lags(swe, .lags = seq(start_lag*4, end_lag*4, by = 4)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter_at(vars(c("swe_lag20")), any_vars(!is.na(.))) %>%
+  dplyr::select(basin, district, date, wdid, approp_date, out_pct, out, out_count_week, eddi1y, contains("swe_lag"))
+
+junior_lst <-
+  junior_week %>%
+  dplyr::group_by(basin) %>%
+  dplyr::group_split()
+
+senior_week <-
+  mod_df %>%
+  dplyr::filter(seniority == "senior") %>%
+  dplyr::select(basin, district, date, wdid, gnis_id, station_code,
+              approp_date,
+              # seniority,
+              out,
+              out_count_week,
+              # swe,
+              apr_swe, may_swe, ep_50)
+
+junior_month <-
+  mod_month %>%
+  dplyr::filter(seniority == "junior") %>%
+  dplyr::mutate(
+    month = lubridate::month(date)
+  ) %>%
+  # dplyr::filter(month %in% c(6, 7, 8, 9)) %>%
+  dplyr::select(basin, district, date, wdid, gnis_id, station_code,
+                approp_date,
+                # seniority,
+                out_pct,
+                out,
+                out_count_month,
+                swe,
+                apr_swe, may_swe, ep_50) %>%
+  dplyr::filter(!is.na(ep_50))
 
 out_df <-
   mod_df %>%
@@ -43,26 +79,21 @@ out_df <-
   dplyr::filter(seniority == "junior") %>%
   dplyr::mutate(
     month = lubridate::month(date)
-    # seniority = dplyr::case_when(
-    #   seniority %in% c("median") & as.Date(approp_date) >= "1930-01-01" ~ "junior",
-    #   seniority %in% c("median") & as.Date(approp_date) < "1930-01-01"  ~ "senior",
-    #   TRUE                                                              ~ seniority
-    # )
   ) %>%
-  # dplyr::filter(month %in% c(5, 6, 7, 8, 9)) %>%
-  dplyr::filter(month %in% c(5, 6, 7, 8, 9), wdid %in% id_mask) %>%
+  dplyr::filter(month %in% c(5, 6, 7, 8, 9)) %>%
+  dplyr::filter(!is.na(ep_50)) %>%
   na.omit() %>%
   # dplyr::group_by(basin, district, seniority)
   # dplyr::group_by(basin, district, seniority, date) %>%
   # dplyr::summarise(
   #   dplyr::across(where(is.numeric), \(x) mean(x))
   # ) %>%
-  dplyr::select(basin, district, seniority, date, out_pct,
-                out,
-                pr, tmmn, tmmx, spi90d, spi1y, eddi90d, eddi1y,
-                swe, mar_swe, apr_swe, may_swe)  %>%
-  # dplyr::select(basin, seniority, date, out_pct, pr, tmmn, tmmx, eddi1y, swe, mar_swe, apr_swe, may_swe)  %>%
-  # dplyr::select(basin, seniority, date, out_pct, pr, tmmn, tmmx, eddi1y, contains("swe"))  %>%
+  dplyr::select(basin, district, seniority, date,
+                out_pct, out,
+                swe, eddi1y, ep_50
+                # pr, tmmn, tmmx, spi90d, spi1y, eddi90d, eddi1y,
+                # swe, mar_swe, apr_swe, may_swe
+                )  %>%
   dplyr::mutate(dplyr::across(where(is.numeric), \(x) round(x, 4))) %>%
   dplyr::select(-date)
   # dplyr::rename(out_pct = out)
@@ -99,8 +130,9 @@ out_lst <-
 # ---- Basin Models ----
 
 for (i in 1:length(out_lst)) {
-  i = 2
-  basin_name <- unique(out_lst[[i]]$basin)[1]
+  i = 6
+  # basin_name <- unique(out_lst[[i]]$basin)[1]
+  basin_name <- unique(junior_lst[[i]]$basin)[1]
 
   logger::log_info("{basin_name}")
 
@@ -112,24 +144,33 @@ for (i in 1:length(out_lst)) {
 
 
   class_mods <- make_models(
-    df         = out_lst[[i]],
+    # df         = out_lst[[i]],
+    df         = junior_lst[[i]],
     # df         = dplyr::select(out_lst[[i]], -basin),
     target_var = "out",
     basin_name = basin_name,
     model_type = "classification",
-    strata     = "district",
+    # strata     = "district",
     nfolds     = 5,
     ncores     = 6,
     save_path  = paste0("D:/cpo/models/")
   )
-
+  dplyr::select(junior_lst[[i]], -out_pct, -out)
+  dplyr::rename(
+    dplyr::select(junior_lst[[i]], -out_pct),
+    out_pct = out_count_week
+  )
   reg_mods <- make_models(
-    df         = out_lst[[i]],
+    # df         = out_lst[[i]],
+    df         =   dplyr::rename(
+                        dplyr::select(junior_lst[[i]], -out_pct),
+                        out_pct = out_count_week
+                      ),
     # df         = dplyr::select(out_lst[[i]], -basin),
     target_var = "out_pct",
     basin_name = basin_name,
     model_type = "regression",
-    strata     = "seniority",
+    # strata     = "district",
     nfolds     = 5,
     ncores     = 6,
     save_path  = paste0("D:/cpo/models/")

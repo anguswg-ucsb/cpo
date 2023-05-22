@@ -33,7 +33,9 @@ district_path <- "data/water_districts_simple.geojson"
 #     .$wdid %>%
 #     unique() %>%
 #     length()
-
+# SWE
+# May 1
+# Annual peak
 
 if(file.exists(model_data_path) & file.exists(month_data_path)) {
 
@@ -166,13 +168,21 @@ if(file.exists(model_data_path) & file.exists(month_data_path)) {
 
 }
 
-rm(clim_ts, wr_net, dist_shp, wr_pts, week_calls, forecasts_df, gnis_flines, snotel_df,
+rm(clim_ts, wr_net, dist_shp, wr_pts, week_calls, month_calls, forecasts_df, gnis_flines, snotel_df,
    wr_gnis, districts_path, end_date, start_date, site_path, gnis_path,
    api_key, weekly_call_path, wr_net_path, wr_pts_path, swe_path, uwdids_path,
    climate_path, call_save_path, wr_gnis_path)
 
-#  =======================================
-#  =======================================
+#  ==============================================
+#  ================= REVIEW =====================
+#  ==============================================
+
+
+
+#  ==============================================
+#  ==============================================
+
+
 #
 #
 # modsdf <-
