@@ -252,7 +252,8 @@ if(file.exists(gnis_lst_path)) {
        ) %>%
        dplyr::ungroup() %>%
        dplyr::group_by(year) %>%
-       dplyr::slice(1)
+       dplyr::slice(1) %>%
+       dplyr::ungroup()
        # names()
 
      avg_year %>%
@@ -260,12 +261,18 @@ if(file.exists(gnis_lst_path)) {
        ggplot2::geom_line(ggplot2::aes(x = datetime, y = avg_call_year))
 
      # go get the snotel data
-     snotel_sites <- readr::read_csv(snotel_path, show_col_types = FALSE)
+     snotel_sites <-
+       snotel_path %>%
+       readr::read_csv(show_col_types = FALSE) %>%
+       dplyr::filter(district == ifelse(
+                                   dist_shp$DISTRICT[i] < 10,
+                                   paste0("0", dist_shp$DISTRICT[i]),
+                                   paste0(dist_shp$DISTRICT[i]))
+                                   )
 
-
-     aggreg_snotel(
-
-     )
+     snotel_df <- get_snotel_peaks(
+                         snotel_sites
+                         )
      # mapview::mapview(max_fline) + pts2 + pts
      }, error = function(e) {
 

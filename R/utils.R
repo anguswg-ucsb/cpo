@@ -591,14 +591,16 @@ aggreg_snotel <- function(
   return(expanded_df)
 
 }
+
 get_snotel_peaks <- function(
-    site_df,
+    site_df
     # district_path,
-    start_lag = 3,
-    end_lag   = 12
+    # start_lag = 3,
+    # end_lag   = 12
 ) {
   # site_df <-
-  #   snotel_sites %>%
+  #   snotel_sites
+  # %>%
   #   dplyr::filter(district == "02")
   # path to snotel data
   # snotel_path <- "data/all_snotel_co.rds"
@@ -653,16 +655,16 @@ get_snotel_peaks <- function(
   #   sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) %>%
   #   mapview::mapview() + dists
 
-  # Convert the sequence to a data frame
-  date_df <-
-    data.frame(
-      date = seq(as.Date("1979-12-31"), Sys.Date(), by = "7 days")
-    ) %>%
-    dplyr::mutate(
-      year      = lubridate::year(date),
-      week_num  = strftime(date, format = "%V"),
-      year_week = paste0(year, "_", week_num)
-    )
+  # # Convert the sequence to a data frame
+  # date_df <-
+  #   data.frame(
+  #     date = seq(as.Date("1979-12-31"), Sys.Date(), by = "7 days")
+  #   ) %>%
+  #   dplyr::mutate(
+  #     year      = lubridate::year(date),
+  #     week_num  = strftime(date, format = "%V"),
+  #     year_week = paste0(year, "_", week_num)
+  #   )
 
   snotel_df <- lapply(1:nrow(site_df), function(i) {
 
@@ -682,7 +684,7 @@ get_snotel_peaks <- function(
   })
 
   # average SWE across each districts snotel sites and dates
-  snotel_df2 <-
+  snotel_df <-
     snotel_df %>%
     dplyr::bind_rows() %>%
     dplyr::group_by(date, district, basin) %>%
@@ -698,8 +700,8 @@ get_snotel_peaks <- function(
   # so we impute the mean across the whole state, the idea being
   # that its such a small number of days so,
   # we take a snapshot of general SWE conditions across the whole state use that to replace missing values
-  snotel_df2 <-
-    snotel_df2 %>%
+  snotel_df <-
+    snotel_df %>%
     dplyr::group_by(date, basin) %>%
     dplyr::mutate(
       swe  = ifelse(is.na(swe) |is.nan(swe), mean(swe, na.rm = TRUE), swe)
@@ -714,78 +716,86 @@ get_snotel_peaks <- function(
 
   # yearly peak swe
   yearly_peak <-
-    snotel_df2 %>%
+    snotel_df %>%
     dplyr::mutate(
-      year = lubridate::year(datetime)
+      year = as.character(lubridate::year(datetime))
     ) %>%
-    dplyr::group_by(district, year) %>%
+    dplyr::group_by(basin, district, year) %>%
     dplyr::summarize(
       peak_swe = max(swe, na.rm = T)
     ) %>%
     dplyr::ungroup()
 
   may_peak <-
-    snotel_df2 %>%
+    snotel_df %>%
     dplyr::mutate(
-      year = lubridate::year(datetime),
-      month = lubridate::month(datetime, label = T),
-      day   =
+      year      = as.character(lubridate::year(datetime)),
+      month_day = paste0(lubridate::month(datetime, label = T), "_", lubridate::day(datetime))
     ) %>%
     dplyr::group_by(district, year) %>%
-    dplyr::filter(datetime == )
-    dplyr::summarize(
-      peak_swe = max(swe, na.rm = T)
-    ) %>%
-    dplyr::ungroup()
-  # join daily district SWE values w/ weekly date dataframe and calc avg swe per week per district
-  snotel_df <-
-    snotel_df %>%
-    dplyr::mutate(
-      # year     = lubridate::year(datetime),
-      # week_num = strftime(datetime, format = "%V"),
-      year_week = paste0(lubridate::year(datetime), "_",  strftime(datetime, format = "%V"))
-    ) %>%
-    dplyr::filter(year_week %in% unique(date_df$year_week)) %>%
-    dplyr::left_join(
-      date_df,
-      relationship = "many-to-many",
-      by           = c("year_week")
-      # by           = c("year", "week_num")
-    ) %>%
-    dplyr::group_by(basin, district, date) %>%
-    dplyr::summarise(
-      swe = mean(swe, na.rm =T)
-    ) %>%
-    dplyr::ungroup()
-  # dplyr::filter(!is.na(date))
-
-  # remove NAs in date column
-  snotel_df <- dplyr::filter(snotel_df, !is.na(date))
-
-  # get complete date range to fill out missing dates for some snotel sites
-  date_range <-
-    snotel_df %>%
-    # dplyr::filter(basin == "South Platte") %>%
-    dplyr::group_by(basin) %>%
-    dplyr::add_count() %>%
+    dplyr::filter(month_day == "May_1") %>%
     dplyr::ungroup() %>%
-    dplyr::slice_max(n) %>%
-    dplyr::select(date) %>%
-    dplyr::distinct()
+    dplyr::select(basin, district, year, may_swe = swe)
 
-  expanded_df  <-
-    snotel_df %>%
-    tidyr::complete(district, date = date_range$date) %>%
+  final_swe <-
     dplyr::left_join(
-      dplyr::distinct(dplyr::select(snotel_df, basin2 = basin, district)),
-      by = "district"
-    ) %>%
-    dplyr::mutate(basin = ifelse(is.na(basin), basin2, basin)) %>%
-    dplyr::select(-basin2) %>%
-    dplyr::group_by(basin, date) %>%
-    dplyr::mutate(swe = ifelse(is.na(swe), mean(swe, na.rm = TRUE), swe)) %>%
-    dplyr::ungroup() %>%
-    dplyr::filter(!is.na(swe))
+      yearly_peak,
+      may_peak,
+      by = c("basin", "district", "year")
+      )
+
+  return(final_swe)
+
+
+  # # join daily district SWE values w/ weekly date dataframe and calc avg swe per week per district
+  # snotel_df <-
+  #   snotel_df %>%
+  #   dplyr::mutate(
+  #     # year     = lubridate::year(datetime),
+  #     # week_num = strftime(datetime, format = "%V"),
+  #     year_week = paste0(lubridate::year(datetime), "_",  strftime(datetime, format = "%V"))
+  #   ) %>%
+  #   dplyr::filter(year_week %in% unique(date_df$year_week)) %>%
+  #   dplyr::left_join(
+  #     date_df,
+  #     relationship = "many-to-many",
+  #     by           = c("year_week")
+  #     # by           = c("year", "week_num")
+  #   ) %>%
+  #   dplyr::group_by(basin, district, date) %>%
+  #   dplyr::summarise(
+  #     swe = mean(swe, na.rm =T)
+  #   ) %>%
+  #   dplyr::ungroup()
+  # # dplyr::filter(!is.na(date))
+  #
+  # # remove NAs in date column
+  # snotel_df <- dplyr::filter(snotel_df, !is.na(date))
+  #
+  # # get complete date range to fill out missing dates for some snotel sites
+  # date_range <-
+  #   snotel_df %>%
+  #   # dplyr::filter(basin == "South Platte") %>%
+  #   dplyr::group_by(basin) %>%
+  #   dplyr::add_count() %>%
+  #   dplyr::ungroup() %>%
+  #   dplyr::slice_max(n) %>%
+  #   dplyr::select(date) %>%
+  #   dplyr::distinct()
+  #
+  # expanded_df  <-
+  #   snotel_df %>%
+  #   tidyr::complete(district, date = date_range$date) %>%
+  #   dplyr::left_join(
+  #     dplyr::distinct(dplyr::select(snotel_df, basin2 = basin, district)),
+  #     by = "district"
+  #   ) %>%
+  #   dplyr::mutate(basin = ifelse(is.na(basin), basin2, basin)) %>%
+  #   dplyr::select(-basin2) %>%
+  #   dplyr::group_by(basin, date) %>%
+  #   dplyr::mutate(swe = ifelse(is.na(swe), mean(swe, na.rm = TRUE), swe)) %>%
+  #   dplyr::ungroup() %>%
+  #   dplyr::filter(!is.na(swe))
 
   # # add lagged SWE value by basin, default lag is 3-12 month lags
   # snotel_df2 <-
@@ -835,50 +845,50 @@ get_snotel_peaks <- function(
   #   dplyr::select(-year) %>%
   #   dplyr::ungroup()
 
-  # calculate March, April, May peak SWE values
-  peaks <-
-    expanded_df %>%
-    dplyr::mutate(
-      month = lubridate::month(date, label = T),
-      year  = lubridate::year(date)
-    ) %>%
-    dplyr::group_by(basin, district, month, year) %>%
-    dplyr::summarise(
-      peak_swe = round(max(swe, na.rm = T), 4)
-    ) %>%
-    dplyr::ungroup() %>%
-    dplyr::filter(month %in% c("Mar", "Apr", "May")) %>%
-    na.omit() %>%
-    dplyr::group_by(basin, district, year) %>%
-    tidyr::pivot_wider(
-      id_cols     = c(basin, district, year),
-      names_from  = month,
-      values_from = peak_swe
-    ) %>%
-    dplyr::ungroup() %>%
-    na.omit()
-
-
-  # cleanup names
-  names(peaks) <- c("basin", "district", "year",
-                    c(paste0(tolower(names(peaks))[!grepl("basin|district|year", tolower(names(peaks)))], "_swe")))
-
-  # add Peak March, April, May SWE
-  expanded_df <-
-    expanded_df %>%
-    dplyr::mutate(
-      year  = lubridate::year(date)
-    ) %>%
-    dplyr::left_join(
-      dplyr::select(peaks, -basin),
-      by = c("district", "year")
-    ) %>%
-    dplyr::relocate(basin, district, date, swe, mar_swe, apr_swe, may_swe) %>%
-    dplyr::select(-year) %>%
-    dplyr::mutate(dplyr::across(where(is.numeric), \(x) round(x, 3))) %>%
-    dplyr::mutate(
-      district = ifelse(district < 10, paste0("0", district), district)
-    )
+  # # calculate March, April, May peak SWE values
+  # peaks <-
+  #   expanded_df %>%
+  #   dplyr::mutate(
+  #     month = lubridate::month(date, label = T),
+  #     year  = lubridate::year(date)
+  #   ) %>%
+  #   dplyr::group_by(basin, district, month, year) %>%
+  #   dplyr::summarise(
+  #     peak_swe = round(max(swe, na.rm = T), 4)
+  #   ) %>%
+  #   dplyr::ungroup() %>%
+  #   dplyr::filter(month %in% c("Mar", "Apr", "May")) %>%
+  #   na.omit() %>%
+  #   dplyr::group_by(basin, district, year) %>%
+  #   tidyr::pivot_wider(
+  #     id_cols     = c(basin, district, year),
+  #     names_from  = month,
+  #     values_from = peak_swe
+  #   ) %>%
+  #   dplyr::ungroup() %>%
+  #   na.omit()
+  #
+  #
+  # # cleanup names
+  # names(peaks) <- c("basin", "district", "year",
+  #                   c(paste0(tolower(names(peaks))[!grepl("basin|district|year", tolower(names(peaks)))], "_swe")))
+  #
+  # # add Peak March, April, May SWE
+  # expanded_df <-
+  #   expanded_df %>%
+  #   dplyr::mutate(
+  #     year  = lubridate::year(date)
+  #   ) %>%
+  #   dplyr::left_join(
+  #     dplyr::select(peaks, -basin),
+  #     by = c("district", "year")
+  #   ) %>%
+  #   dplyr::relocate(basin, district, date, swe, mar_swe, apr_swe, may_swe) %>%
+  #   dplyr::select(-year) %>%
+  #   dplyr::mutate(dplyr::across(where(is.numeric), \(x) round(x, 3))) %>%
+  #   dplyr::mutate(
+  #     district = ifelse(district < 10, paste0("0", district), district)
+  #   )
 
   # expanded_df %>%
   #   dplyr::select(-swe) %>%
@@ -889,7 +899,7 @@ get_snotel_peaks <- function(
   #   ggplot2::geom_line(ggplot2::aes(x = date, y = value, color = name), size = 1) +
   #   ggplot2::facet_wrap(~district)
 
-  return(expanded_df)
+  # return(expanded_df)
 
 }
 # impute missing values w/ mean
