@@ -592,8 +592,256 @@ aggreg_snotel <- function(
 
 }
 
+make_soap_body <- function(forecast_period, station_code, element_cd, network, state) {
+  # Create SOAP request body
+  body <- paste0(
+    '<?xml version="1.0" encoding="UTF-8"?>
+                 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:q0="http://www.wcc.nrcs.usda.gov/ns/awdbWebService"
+                       xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                        <SOAP-ENV:Body>
+                          <q0:getForecasts>',
+    '<stationTriplet>', station_code, ':', state, ':', network, '</stationTriplet>',
+    '<elementCd>', element_cd, '</elementCd>',
+    '<forecastPeriod>', forecast_period, '</forecastPeriod>',
+    '</q0:getForecasts>
+                        </SOAP-ENV:Body>
+                      </SOAP-ENV:Envelope>'
+  )
+
+
+  return(xml2::read_xml(body))
+
+}
+
+get_forecast_data <- function(
+    station_code,
+    forecast_period,
+    element_cd,
+    network,
+    state
+) {
+
+  res <- lapply(1:length(station_code), function(i) {
+
+    # tryCatch({
+    #   i= 1
+    #   station_code = "06694920"
+
+      # Create SOAP request body
+      body <- make_soap_body(forecast_period, station_code[i], element_cd, network, state)
+
+      # Save body as temporary XML file
+      temp_file <- tempfile(fileext = ".xml")
+
+      # write body to temporary file
+      xml2::write_xml(body, temp_file)
+
+      # NRCS SOAP API Client
+      NRCS_URL = 'https://wcc.sc.egov.usda.gov/awdbWebService/services?WSDL'
+
+      r <- httr::POST(NRCS_URL, body = httr::upload_file(temp_file))
+
+      # Check the status code
+      if (r$status_code == 200) {
+
+        # Process the response
+        resp_data <-
+          r %>%
+          httr::content() %>%
+          xml2::as_list()
+
+        # Delete the temporary XML file
+        file.remove(temp_file)
+
+        message("Getting forecast data - Station code: ", station_code[i])
+
+        fx <- lapply(1:length(resp_data$Envelope$Body$getForecastsResponse), function(z) {
+
+          rows <- resp_data$Envelope$Body$getForecastsResponse[[z]]
+
+          row_lst <- lapply(rows, unlist)
+
+          final <- data.frame(
+            exceedence_prob = unlist(row_lst[names(row_lst) == "exceedenceProbabilities"]),
+            exceedence_vals = unlist(purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~if (is.null(.x)) NA else .x))
+          )
+
+          if (all(is.na(final$exceedence_vals))) {
+
+            NULL
+
+          } else {
+
+            final <-
+              final %>%
+              dplyr::tibble() %>%
+              dplyr::mutate(
+                element_cd      = row_lst$elementCd,
+                station_triplet = row_lst$stationTriplet,
+                date            = row_lst$calculationDate,
+                pub_date        = row_lst$publicationDate
+              ) %>%
+              tidyr::separate(station_triplet, into = c("usgs_id", "state", "network"), sep = ":",
+                              remove = FALSE) %>%
+              dplyr::select(date, pub_date, usgs_id, station_triplet,
+                            element_cd, exceedence_prob, exceedence_vals)
+
+            final
+          }
+
+        }) %>%
+          dplyr::bind_rows()
+
+        fx
+
+      } else {
+
+        message("Error occurred for station code: ", station_code[i], ". Status code: ", r$status_code)
+
+        NULL
+
+      }
+      # }, error = function(e) {
+      #   message("Error occurred for station code: ", station_code[i])
+      #
+      #   NULL
+      #
+      # })
+
+    }) %>%
+      dplyr::bind_rows()
+
+  # result_df <- do.call(rbind, res)
+
+  return(res)
+
+}
+#
+# get_forecast_data <- function(station_codes, forecast_period, element_cd, network, state) {
+#   result_list <- lapply(station_codes, function(station_code) {
+#     # Create SOAP request body
+#     body <- make_soap_body(forecast_period, station_code, element_cd, network, state)
+#
+#     # Save body as temporary XML file
+#     temp_file <- tempfile(fileext = ".xml")
+#     xml2::write_xml(body, temp_file)
+#
+#     # NRCS SOAP API Client
+#     NRCS_URL <- 'https://wcc.sc.egov.usda.gov/awdbWebService/services?WSDL'
+#
+#     # Make POST request with XML body
+#     r <- httr::POST(NRCS_URL, body = httr::upload_file(temp_file))
+#
+#     # Process the response
+#     resp_data <- r %>% httr::content() %>% xml2::as_list()
+#
+#     # Delete the temporary XML file
+#     file.remove(temp_file)
+#
+#     message("Getting forecast data - Station code: ", station_code)
+#
+#     fx <- lapply(1:length(resp_data$Envelope$Body$getForecastsResponse), function(i) {
+#       rows <- resp_data$Envelope$Body$getForecastsResponse[[i]]
+#       row_lst <- lapply(rows, unlist)
+#
+#       final <- data.frame(
+#         exceedence_prob = unlist(row_lst[names(row_lst) == "exceedenceProbabilities"]),
+#         exceedence_vals = unlist(purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~ if (is.null(.x)) NA else .x))
+#       )
+#
+#       if (all(is.na(final$exceedence_vals))) {
+#         NULL
+#       } else {
+#         final <- final %>%
+#           dplyr::tibble() %>%
+#           dplyr::mutate(
+#             element_cd = row_lst$elementCd,
+#             station_triplet = row_lst$stationTriplet,
+#             date = row_lst$calculationDate,
+#             pub_date = row_lst$publicationDate
+#           ) %>%
+#           tidyr::separate(station_triplet, into = c("usgs_id", "state", "network"), sep = ":", remove = FALSE) %>%
+#           dplyr::select(date, pub_date, usgs_id, station_triplet, element_cd, exceedence_prob, exceedence_vals)
+#         final
+#       }
+#     }) %>%
+#       dplyr::bind_rows()
+#
+#     return(fx)
+#   })
+#
+#   result_df <- do.call(rbind, result_list)
+#   return(result_df)
+# }
+
+batch_get_forecasts <- function(station_df,
+                                id_col = "usgs_id",
+                                forecast_period,
+                                element_cd,
+                                network,
+                                state) {
+  # station_df <- sites_df
+
+  # station_df <- ref_tbl[2, ]
+
+  # site_lst <- lapply(1:length(site_ids), function(i) {
+  #
+  #   message(paste0("Site: ", i, "/", length(site_ids)))
+  #   snotelr::snotel_download(site_id = site_ids[i], internal = TRUE)
+  #
+  # }) %>%
+  #   dplyr::bind_rows()
+  #   sites_df$usgs_id
+  #   ref_tbl$usgs_id[2]
+  #   tidyr::separate_rows(station_df[2, ], "usgs_id", sep = ", ")$usgs_id
+    # tidyr::separate_rows(ref_tbl[2, ], any_of(id_col), sep = ", ")
+    forecast_df <- lapply(1:nrow(station_df), function(k) {
+      k = 1
+      # logger::log_info("Getting district {unique(site_df[i, ]$district)} snotel data...")
+
+      # unique(site_df[i, ]$basin)
+      # ids <- tidyr::separate_rows(site_df[i, ], site_id, sep = ", ")$site_id
+      # unique(site_df[i, ]$basin)
+      # ids <- tidyr::separate_rows(site_df[i, ], any_of(id_col), sep = ", ")[[id_col]]
+
+      ids <- stringr::str_replace_all(
+        tidyr::separate_rows(station_df[k, ], any_of(id_col), sep = ", ")[[id_col]],
+        "[^[:alnum:]]", ""
+      )
+      # i
+      state = "CO"
+      network = "USGS"
+      element_cd = "SRVO"
+      forecast_period = "APR-JUL"
+
+      ids2 = ids[1:3]
+      ids2 <- c(ids2, "sdfhfjs")
+      # ids2 = "06700000"
+      fx <- get_forecast_data(
+                  station_code    = ids2,
+                  forecast_period = forecast_period,
+                  element_cd      = element_cd,
+                  network         = network,
+                  state           = state
+                  )
+      fx$usgs_id %>% unique()
+      # clean up output datasets
+      fx <-
+        fx %>%
+        dplyr::mutate(
+          basin    = unique(station_df[k, ]$basin),
+          district = unique(station_df[k, ]$district)
+          ) %>%
+        dplyr::relocate(basin, district)
+
+      snotel
+
+    })
+}
+
 get_snotel_peaks <- function(
-    site_df
+    site_df,
+    id_col = "site_id"
     # district_path,
     # start_lag = 3,
     # end_lag   = 12
@@ -671,13 +919,20 @@ get_snotel_peaks <- function(
     logger::log_info("Getting district {unique(site_df[i, ]$district)} snotel data...")
 
     # unique(site_df[i, ]$basin)
-    ids <- tidyr::separate_rows(site_df[i, ], site_id, sep = ", ")$site_id
+    # ids <- tidyr::separate_rows(site_df[i, ], site_id, sep = ", ")$site_id
+    # unique(site_df[i, ]$basin)
+    # ids <- tidyr::separate_rows(site_df[i, ], any_of(id_col), sep = ", ")[[id_col]]
+
+    ids <- stringr::str_replace_all(
+      tidyr::separate_rows(site_df[i, ], any_of(id_col), sep = ", ")[[id_col]],
+      "[^[:alnum:]]", ""
+    )
 
     snotel <- go_get_snotel_data(site_ids = ids) %>%
-      dplyr::mutate(
-        basin    = unique(site_df[i, ]$basin),
-        district = unique(site_df[i, ]$district)
-      )
+                  dplyr::mutate(
+                    basin    = unique(site_df[i, ]$basin),
+                    district = unique(site_df[i, ]$district)
+                  )
 
     snotel
 

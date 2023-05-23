@@ -25,7 +25,6 @@ district_path <- "data/water_districts_simple.geojson"
 
 # path to district snotel
 site_path <- "data/district_snotel_table.csv"
-
 # # path to dataset with snotel site IDs
 # site_path <- "data/snotel_sites.csv"
 

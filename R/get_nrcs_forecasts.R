@@ -23,7 +23,8 @@ wr_path <-   "data/rights_by_gnis_id.rds"
 
 # path to save output to
 forecasts_path <- "data/wdid_nrcs_forecasts.rds"
-nrcs <- readr::read_csv("data/nrcs/nrcs_forecasts.csv")
+# nrcs <- readr::read_csv("data/nrcs/nrcs_forecasts.csv")
+
 # --------------------
 # ---- Read data -----
 # --------------------
@@ -60,6 +61,299 @@ if(file.exists(forecasts_path)) {
   # readr::write_csv(snotel_df, paste0(swe_path, ".csv"))
 
 }
+
+# --------------------
+# ---- SOAP data -----
+# --------------------
+
+library(httr)
+library(xml2)
+
+# Example usage
+forecast_period <- "APR-JUL"
+station_code <- "09361500"
+element_cd <- "SRVO"
+network <- "USGS"
+state <- "CO"
+
+casts <- get_forecast_data(
+  forecast_period = "APR-JUL",
+  station_code    = "09361500",
+  element_cd      = "SRVO",
+  network         = "USGS",
+  state           = "CO"
+)
+
+# snotel_df <- lapply(1:nrow(site_df), function(i) {
+#
+#   logger::log_info("Getting district {unique(site_df[i, ]$district)} snotel data...")
+#
+#   # unique(site_df[i, ]$basin)
+#   ids <- tidyr::separate_rows(site_df[i, ], site_id, sep = ", ")$site_id
+#
+#   snotel <- go_get_snotel_data(site_ids = ids) %>%
+#     dplyr::mutate(
+#       basin    = unique(site_df[i, ]$basin),
+#       district = unique(site_df[i, ]$district)
+#     )
+#
+#   snotel
+#
+# })
+
+
+# make_soap_body <- function(forecast_period, station_code, element_cd, network, state) {
+#   # Create SOAP request body
+#   body <- paste0(
+#             '<?xml version="1.0" encoding="UTF-8"?>
+#                  <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:q0="http://www.wcc.nrcs.usda.gov/ns/awdbWebService"
+#                        xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+#                         <SOAP-ENV:Body>
+#                           <q0:getForecasts>',
+#                              '<stationTriplet>', station_code, ':', state, ':', network, '</stationTriplet>',
+#                              '<elementCd>', element_cd, '</elementCd>',
+#                              '<forecastPeriod>', forecast_period, '</forecastPeriod>',
+#                          '</q0:getForecasts>
+#                         </SOAP-ENV:Body>
+#                       </SOAP-ENV:Envelope>'
+#             )
+#
+#
+#   return(xml2::read_xml(body))
+#
+# }
+
+# get_forecast_data <- function(
+#     forecast_period,
+#     station_code,
+#     element_cd,
+#     network,
+#     state
+#     ) {
+#
+#   # Create SOAP request body
+#   body <- make_soap_body(forecast_period, station_code, element_cd, network, state)
+#
+#   # Save body as temporary XML file
+#   temp_file <- tempfile(fileext = ".xml")
+#
+#   xml2::write_xml(body, temp_file)
+#
+#   # NRCS SOAP API Client
+#   NRCS_URL = 'https://wcc.sc.egov.usda.gov/awdbWebService/services?WSDL'
+#
+#   # NRCS_URL = 'http://www.wcc.nrcs.usda.gov/ns/awdbWebService'
+#   r <- httr::POST(NRCS_URL, body = httr::upload_file(temp_file))
+#
+#   resp_data <-
+#     r %>%
+#     httr::content() %>%
+#     xml2::as_list()
+#
+#   # Delete the temporary XML file
+#   file.remove(temp_file)
+#
+#   message("Getting forecast data - Station code: ", station_code)
+#
+#   fx <- lapply(1:length(resp_data$Envelope$Body$getForecastsResponse), function(i) {
+#
+#     rows <- resp_data$Envelope$Body$getForecastsResponse[[i]]
+#
+#     row_lst <- lapply(rows, unlist)
+#
+#     final <- data.frame(
+#       exceedence_prob = unlist(row_lst[names(row_lst) == "exceedenceProbabilities"]),
+#       exceedence_vals = unlist(purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~if (is.null(.x)) NA else .x))
+#     )
+#
+#     if (all(is.na(final$exceedence_vals))) {
+#
+#       NULL
+#
+#     } else {
+#
+#       final <-
+#         final %>%
+#         dplyr::tibble() %>%
+#         dplyr::mutate(
+#           element_cd      = row_lst$elementCd,
+#           station_triplet = row_lst$stationTriplet,
+#           date            = row_lst$calculationDate,
+#           pub_date        = row_lst$publicationDate
+#         ) %>%
+#         tidyr::separate(station_triplet, into = c("usgs_id", "state", "network"), sep = ":",  remove = FALSE) %>%
+#         dplyr::select(date, pub_date, usgs_id, station_triplet, element_cd, exceedence_prob, exceedence_vals)
+#
+#       final
+#     }
+#
+#   }) %>%
+#     dplyr::bind_rows()
+#
+#   return(fx)
+#
+# }
+
+# # Create SOAP request body
+# body <- make_soap_body(forecast_period, station_code, element_cd, network, state)
+#
+# xml2::write_xml(body, "soap_test.xm")
+#
+# # NRCS SOAP API Client
+# NRCS_URL = 'https://wcc.sc.egov.usda.gov/awdbWebService/services?WSDL'
+#
+# # NRCS_URL = 'http://www.wcc.nrcs.usda.gov/ns/awdbWebService'
+# r <- httr::POST(NRCS_URL, body = upload_file("soap_test.xml"))
+#
+# resp_data <-
+#   r %>%
+#   httr::content() %>%
+#   xml2::as_list()
+
+# fx <- lapply(1:length(resp_data$Envelope$Body$getForecastsResponse), function(i) {
+#   # i = 162
+#   message(i, "/", length(resp_data$Envelope$Body$getForecastsResponse))
+#
+#   rows <- resp_data$Envelope$Body$getForecastsResponse[[i]]
+#
+#   row_lst <- lapply(rows, unlist)
+#
+#   final <- data.frame(
+#     exceedence_prob = unlist(row_lst[names(row_lst) == "exceedenceProbabilities"]),
+#     exceedence_vals = unlist(purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~if (is.null(.x)) NA else .x))
+#     )
+#
+#   if (all(is.na(final$exceedence_vals))) {
+#
+#     NULL
+#
+#   } else {
+#
+#     final <-
+#       final %>%
+#       dplyr::tibble() %>%
+#       dplyr::mutate(
+#         element_cd      = row_lst$elementCd,
+#         station_triplet = row_lst$stationTriplet,
+#         date            = row_lst$calculationDate,
+#         pub_date        = row_lst$publicationDate
+#       ) %>%
+#       tidyr::separate(station_triplet, into = c("usgs_id", "state", "network"), sep = ":",  remove = FALSE) %>%
+#       dplyr::select(date, pub_date, usgs_id, station_triplet, element_cd, exceedence_prob, exceedence_vals)
+#
+#     final
+#   }
+#
+#   }) %>%
+#   dplyr::bind_rows()
+  # names(tmp)
+
+  # unique_names <- unique(names(lst))
+ # tmp2 <-  tmp[names(tmp) == "exceedenceProbabilities"] %>%
+ #   cbind() %>%
+ #    as.data.frame()
+ #
+ #  tmp[names(tmp) == "exceedenceValues"] %>%
+ #    cbind() %>%
+ #    as.data.frame()
+
+  # data.frame(
+  #   exceedence_prob = unlist(cbind(row_lst[names(row_lst) == "exceedenceProbabilities"])),
+  #   # exceedence_vals = unlist(cbind(row_lst[names(row_lst) == "exceedenceValues"]))
+  #   exceedence_vals =  unlist(purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~if (is.null(.x)) NA else .x))
+  # )
+
+   # unlist(purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~if (is.null(.x)) NA else .x))
+
+#   row_lst[names(row_lst) == "exceedenceValues"]
+#
+#   ex_probs <- stats::setNames(as.data.frame(cbind(row_lst[names(row_lst) == "exceedenceProbabilities"])), "exceedenceProbabilities")
+#   rownames(ex_probs) <- NULL
+#
+#   unlist(ex_probs$exceedenceProbabilities)
+#
+#   ex_vals <- stats::setNames(as.data.frame(cbind(row_lst[names(row_lst) == "exceedenceValues"])), "exceedenceValues")
+#
+#   rownames(ex_vals) <- NULL
+#
+#   final <- cbind(ex_probs, ex_vals)
+# # unlist(row_lst[names(row_lst) == "exceedenceProbabilities"])
+# # unlist(cbind(row_lst[names(row_lst) == "exceedenceProbabilities"]))
+#
+#   final <-   data.frame(
+#                 # exceedence_prob = unlist(cbind(row_lst[names(row_lst) == "exceedenceProbabilities"])),
+#                 # exceedence_vals = unlist(cbind(row_lst[names(row_lst) == "exceedenceValues"]))
+#                 exceedence_prob = unlist(row_lst[names(row_lst) == "exceedenceProbabilities"]),
+#                 exceedence_vals =  unlist(purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~if (is.null(.x)) NA else .x))
+#               )
+#
+#   final <-
+#     final %>%
+#     dplyr::tibble() %>%
+#     dplyr::mutate(
+#       element_cd      = row_lst$elementCd,
+#       station_triplet = row_lst$stationTriplet,
+#       date            = row_lst$calculationDate,
+#       pub_date        = row_lst$publicationDate
+#     ) %>%
+#     tidyr::separate(station_triplet, into = c("usgs_id", "state", "network"), sep = ":",  remove = FALSE) %>%
+#     dplyr::select(date, pub_date, usgs_id, station_triplet, element_cd, exceedence_prob, exceedence_vals)
+    # dplyr::relocate(calc_date, station_triplet, element_cd)
+
+
+
+
+  # tmp <- lapply(rows, as.data.frame, USE.NAMES = TRUE) %>%
+  #   dplyr::bind_rows()
+  #   # tidyr::unnest_wider()
+  # df <- as.data.frame(do.call(bind_rows, lapply(rows, as.data.frame)))
+  #
+  #
+  # flattenlist(rows)
+  # inner <- lapply(1:length(rows), function(k) {
+  #   message("inner vals: ", k, "/", length(rows))
+  #
+  #
+  #
+  # }) %>%
+  #   dplyr::bind_rows() %>%
+  #   dplyr::mutate(id = i)
+  #
+  # inner %>%
+  #   tidyr::pivot_wider(
+  #     id_cols = c(-id),
+  #     names_from  = "name",
+  #     values_from = "vals"
+  #   )
+  #
+  # inner$name %>% class()
+  #
+  # df <- separate(df, StringColumn, into = c("Column1", "Column2", "Column3"), sep = ":")
+
+
+  # })
+# con$Envelope$Body$getForecastsResponse[[1]] %>% length()
+
+
+
+# # rxml %>% xml2::() %>% jsonlite::fromJSON()
+# xml2::xml_find_all(rxml, ".//p")
+# RCurl::curlPerform(url = "https://wcc.sc.egov.usda.gov/awdbWebService/services?WSDL",
+#             # httpheader = headerFields,
+#             postfields = body
+# )
+# # Print the SOAP request body
+# print(body)
+#
+# # Print the SOAP request body
+# print(body)
+# nrcs$stationTriplet[1]
+# nrcs$forecastPeriod
+# content(rr)
+
+# --------------------
+# --------------------
+
 
 #
 # process_forecasts <- function(pts_path, nrcs_path) {

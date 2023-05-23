@@ -57,7 +57,7 @@ if(file.exists(gnis_path)) {
 
     message(paste0(i, "/", nrow(dist_shp)))
 
-    mapview::mapview(gnis)
+    # mapview::mapview(gnis)
     # i = 20
     # dist_shp$DISTRICT
     # nhdplusTools::get_nwis(sf::st_buffer(gnis, 5))
