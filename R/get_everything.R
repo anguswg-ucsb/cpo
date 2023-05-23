@@ -109,9 +109,11 @@ if(file.exists(gnis_lst_path)) {
     message(paste0(i, "/", nrow(dist_shp)))
 
     # mapview::mapview(gnis)
-    # i = 8
+    # i = 5
     # dist_shp$DISTRICT
     # nhdplusTools::get_nwis(sf::st_buffer(gnis, 5))
+
+    # i = 8
 
     # pull GNIS ID data
     gnis <- nhdplusTools::get_nhdplus(
@@ -120,38 +122,6 @@ if(file.exists(gnis_lst_path)) {
     )
 
     tryCatch({
-
-      # gnis <-
-      #   gnis %>%
-      #   dplyr::filter(streamcalc != 0) %>%
-      #   dplyr::filter(streamorde >= 3) %>%
-      #   dplyr::mutate(dplyr::across(c(-geometry), as.character)) %>%
-      #   dplyr::group_by(gnis_id, gnis_name, streamorde) %>%
-      #   dplyr::summarise() %>%
-      #   dplyr::mutate(
-      #     gnis_id    = dplyr::case_when(
-      #       gnis_id == " " & gnis_name == " " ~ "no_gnis_id",
-      #       gnis_id == " " & gnis_name != " " ~ gnis_name,
-      #       TRUE                              ~ gnis_id
-      #     ),
-      #     gnis_name    = dplyr::case_when(
-      #       gnis_name == " " & gnis_id %in%  c(" ", "no_gnis_id")  ~ "no_gnis_name",
-      #       gnis_name == " " & !gnis_id %in%  c(" ", "no_gnis_id") ~ gnis_id,
-      #       TRUE                                                   ~ gnis_name
-      #     ),
-      #     district   = dist_shp$DISTRICT[i],
-      #     len        = units::drop_units(sf::st_length(geometry)),
-      #     unit       = "meters"
-      #   ) %>%
-      #   dplyr::arrange(-len) %>%
-      #   dplyr::ungroup() %>%
-      #   dplyr::filter(gnis_id != "no_gnis_id") %>%
-      #   dplyr::slice_max(len) %>%
-      #   dplyr::mutate(uid = paste0(district, "_", gnis_id)) %>%
-      #   dplyr::select(uid, district, gnis_id, gnis_name, streamorde, len, unit, geometry)
-
-      # rm(upstream, gnisid_df, tmp)
-
       # # get upstream GNIS IDs of the longest GNIS ID
       # upstreams <-
       #   gnis %>%
@@ -208,13 +178,17 @@ if(file.exists(gnis_lst_path)) {
         ) %>%
         dplyr::arrange(-len) %>%
         dplyr::ungroup() %>%
-        dplyr::group_by(district, gnis_id, gnis_name) %>%
+        # dplyr::group_by(district, gnis_id, gnis_name) %>%
+        dplyr::group_by(district, gnis_id, gnis_name, streamorde) %>%
         dplyr::summarise(
           len = sum(len, na.rm = T)
         ) %>%
+        # dplyr::ungroup() %>%
         dplyr::arrange(-len) %>%
         dplyr::ungroup() %>%
         dplyr::filter(gnis_id != "no_gnis_id") %>%
+        dplyr::mutate(streamorde = as.numeric(streamorde)) %>%
+        dplyr::arrange(-streamorde, -len) %>%
         dplyr::slice_max(len) %>%
         dplyr::mutate(uid = paste0(district, "_", gnis_id))
 
@@ -241,6 +215,7 @@ if(file.exists(gnis_lst_path)) {
          gnis_id = sub("^0+", "", gnis_id)
        ) %>%
        sf::st_as_sf( coords = c("longitude", "latitude"), crs = 4326) %>%
+       # dplyr::filter(gnis_id == max_fline$gnis_id)
        dplyr::filter(gnis_id == max_fline$gnis_id,  !grepl("GROUNDWATER", water_source))
 
      # mapview::mapview(max_fline) + pts
@@ -271,10 +246,10 @@ if(file.exists(gnis_lst_path)) {
      # go get Out of Priority percent data
      calls <- get_call_data2(
        wdid_df    = pts,
-       start_date = "2005-01-01",
-       end_date   = "2007-01-01"
-       # start_date = "1980-01-01",
-       # end_date   = Sys.Date()
+       # start_date = "2007-01-01",
+       # end_date   = "2014-01-01"
+       start_date = "1980-01-01",
+       end_date   = Sys.Date()
      )
 
      # get average call year data
@@ -315,46 +290,16 @@ if(file.exists(gnis_lst_path)) {
      #   ggplot2::geom_line(ggplot2::aes(x = datetime, y = avg_call_year))
 
      # # go get the snotel data
-     snotel_sites <-
-       snotel_path %>%
-       readr::read_csv(show_col_types = FALSE) %>%
-       dplyr::filter(district == ifelse(
-                                   dist_shp$DISTRICT[i] < 10,
-                                   paste0("0", dist_shp$DISTRICT[i]),
-                                   paste0(dist_shp$DISTRICT[i]))
-                                   )
+     # snotel_sites <-
+     #   snotel_path %>%
+     #   readr::read_csv(show_col_types = FALSE) %>%
+     #   dplyr::filter(district == ifelse(
+     #                               dist_shp$DISTRICT[i] < 10,
+     #                               paste0("0", dist_shp$DISTRICT[i]),
+     #                               paste0(dist_shp$DISTRICT[i]))
+     #                               )
 
-
-     # tmpy <- function(
-     #  site_df,
-     #  id_col = "site_id"
-     #  # district_path,
-     #  # start_lag = 3,
-     #  # end_lag   = 12
-     #   ) {
-     #   # site_df[[id_col]]
-     #
-     #   lapply(1:nrow(site_df), function(i) {
-     #
-     #     logger::log_info("Getting district {unique(site_df[i, ]$district)} snotel data...")
-     #
-     #     # unique(site_df[i, ]$basin)
-     #     ids <- stringr::str_replace_all(
-     #       tidyr::separate_rows(site_df[i, ], any_of(id_col), sep = ", ")[[id_col]],
-     #       "[^[:alnum:]]", ""
-     #     )
-     #     # snotel <- go_get_snotel_data(site_ids = "1161") %>%
-     #     #   dplyr::mutate(
-     #     #     basin    = unique(site_df[i, ]$basin),
-     #     #     district = unique(site_df[i, ]$district)
-     #     #   )
-     #     ids
-     #     # snotel
-     #
-     #   })
-     # }
-     # tmpy(snotel_sites, id_col = "snotel_id")
-
+     # subset reference table
      sites_df <-
        ref_tbl %>%
         dplyr::filter(district == ifelse(
@@ -363,48 +308,80 @@ if(file.exists(gnis_lst_path)) {
           paste0(dist_shp$DISTRICT[i]))
         )
 
-     # strings <- c("1122", "1161\r\n")
-     # stringr::str_replace_all(strings, "[^[:alnum:]]", "")
-     # ids <- stringr::str_replace_all( tidyr::separate_rows(snotel_sites[1, ], snotel_id, sep = ", ")$snotel_id,
-     # "[^[:alnum:]]", "")
-
-     # snotel_df <- lapply(1:nrow(site_df), function(i) {
-     #
-     #   logger::log_info("Getting district {unique(site_df[i, ]$district)} snotel data...")
-     #
-     #   # unique(site_df[i, ]$basin)
-     #   ids <- tidyr::separate_rows(site_df[i, ], site_id, sep = ", ")$site_id
-     #
-     #   snotel <- go_get_snotel_data(site_ids = "1161") %>%
-     #     dplyr::mutate(
-     #       basin    = unique(site_df[i, ]$basin),
-     #       district = unique(site_df[i, ]$district)
-     #     )
-     #   snotel
-     # })
-
-
+     # get snotel data from snotel_id in sites_df
      snotel_df <- get_snotel_peaks(
                          sites_df,
                          id_col = "snotel_id"
                          )
 
 
-     snotel_sites$usgs_id
-     paste0("0", snotel_sites$usgs_id[1])
-
-     snotel_sites$usgs_id[1]
-     sites_df
-     nrcs_df <- get_forecast_data(
-       forecast_period = "APR-JUL",
+     # get NRCS forecasts data
+     nrcs_df <- batch_get_forecasts(
+       station_df      = sites_df,
+       # station_df      =   ref_tbl[1, ],
        element_cd      = "SRVO",
-       station_code    =  snotel_sites$usgs_id[1],
-       # station_code    =    paste0("0", snotel_sites$usgs_id[1]),
+       forecast_period = "APR-JUL",
        state           = "CO",
        network         = "USGS"
      )
 
-     # mapview::mapview(max_fline) + pts2 + pts
+     nrcs <-
+       nrcs_df %>%
+       dplyr::mutate(
+         year  = as.character(lubridate::year(date)),
+         month = as.character(lubridate::month(date, label = T)),
+         year_mon = paste0(as.character(lubridate::year(date)),
+                           "_", as.character(lubridate::month(date, label = T)))
+       ) %>%
+       dplyr::filter(!month %in% c("Dec", "Jun")) %>%
+       # dplyr::group_by(basin, district, date, exceedance_prob) %>%
+       dplyr::group_by(basin, district, year_mon, exceedance_prob) %>%
+       dplyr::summarise(
+         exceedance_vals = sum(exceedance_vals, na.rm = T)
+       ) %>%
+       dplyr::ungroup() %>%
+       dplyr::filter(exceedance_prob == "50") %>%
+       tidyr::separate(year_mon, into = c("year", "month"), sep = "_") %>%
+       dplyr::select(-exceedance_prob) %>%
+       tidyr::complete(month, year, basin, district) %>%
+       dplyr::group_by(month) %>%
+       dplyr::mutate(
+         exceedance_vals = ifelse(is.na(exceedance_vals) |is.nan(exceedance_vals),
+                       mean(exceedance_vals, na.rm = TRUE), exceedance_vals)
+       ) %>%
+       dplyr::ungroup() %>%
+       tidyr::pivot_wider(
+         id_cols     = c(year),
+         names_from  = month,
+         values_from = exceedance_vals
+       ) %>%
+       stats::setNames(c("year", paste0(tolower(names(.)[!grepl("year", names(.))]),
+                                        "_exceed_val")))
+
+     # nrcs %>% stats::setNames(c("year", paste0(tolower(names(nrcs)[!grepl("year", names(nrcs))]),
+     #                                    "_exceed_val")))
+
+
+     final <-
+       avg_year %>%
+       dplyr::select(district, wdid, gnis_id, water_source, approp_date, year, avg_call_year) %>%
+       dplyr::mutate(
+         year = as.character(year)
+       ) %>%
+       dplyr::left_join(
+         snotel_df,
+         by = c("year", "district")
+       ) %>%
+       dplyr::relocate(basin, district) %>%
+       dplyr::left_join(
+         nrcs,
+         by = "year"
+       )
+     final %>%
+     ggplot2::ggplot() +
+       ggplot2::geom_point(ggplot2::aes(x = may_swe, y = avg_call_year))
+     # final <-
+
      }, error = function(e) {
 
       message(paste0("Skipping iteration: ", i, "Error:\n", e))

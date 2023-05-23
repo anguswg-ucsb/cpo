@@ -662,11 +662,11 @@ get_forecast_data <- function(
           row_lst <- lapply(rows, unlist)
 
           final <- data.frame(
-            exceedence_prob = unlist(row_lst[names(row_lst) == "exceedenceProbabilities"]),
-            exceedence_vals = unlist(purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~if (is.null(.x)) NA else .x))
+            exceedance_prob = unlist(row_lst[names(row_lst) == "exceedenceProbabilities"]),
+            exceedance_vals = as.numeric(unlist(purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~if (is.null(.x)) NA else .x)))
           )
 
-          if (all(is.na(final$exceedence_vals))) {
+          if (all(is.na(final$exceedance_vals))) {
 
             NULL
 
@@ -684,7 +684,7 @@ get_forecast_data <- function(
               tidyr::separate(station_triplet, into = c("usgs_id", "state", "network"), sep = ":",
                               remove = FALSE) %>%
               dplyr::select(date, pub_date, usgs_id, station_triplet,
-                            element_cd, exceedence_prob, exceedence_vals)
+                            element_cd, exceedance_prob, exceedance_vals)
 
             final
           }
@@ -745,11 +745,11 @@ get_forecast_data <- function(
 #       row_lst <- lapply(rows, unlist)
 #
 #       final <- data.frame(
-#         exceedence_prob = unlist(row_lst[names(row_lst) == "exceedenceProbabilities"]),
-#         exceedence_vals = unlist(purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~ if (is.null(.x)) NA else .x))
+#         exceedance_prob = unlist(row_lst[names(row_lst) == "exceedenceProbabilities"]),
+#         exceedance_vals = unlist(purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~ if (is.null(.x)) NA else .x))
 #       )
 #
-#       if (all(is.na(final$exceedence_vals))) {
+#       if (all(is.na(final$exceedance_vals))) {
 #         NULL
 #       } else {
 #         final <- final %>%
@@ -761,7 +761,7 @@ get_forecast_data <- function(
 #             pub_date = row_lst$publicationDate
 #           ) %>%
 #           tidyr::separate(station_triplet, into = c("usgs_id", "state", "network"), sep = ":", remove = FALSE) %>%
-#           dplyr::select(date, pub_date, usgs_id, station_triplet, element_cd, exceedence_prob, exceedence_vals)
+#           dplyr::select(date, pub_date, usgs_id, station_triplet, element_cd, exceedance_prob, exceedance_vals)
 #         final
 #       }
 #     }) %>%
@@ -781,50 +781,35 @@ batch_get_forecasts <- function(station_df,
                                 network,
                                 state) {
   # station_df <- sites_df
-
   # station_df <- ref_tbl[2, ]
 
-  # site_lst <- lapply(1:length(site_ids), function(i) {
-  #
-  #   message(paste0("Site: ", i, "/", length(site_ids)))
-  #   snotelr::snotel_download(site_id = site_ids[i], internal = TRUE)
-  #
-  # }) %>%
-  #   dplyr::bind_rows()
-  #   sites_df$usgs_id
-  #   ref_tbl$usgs_id[2]
-  #   tidyr::separate_rows(station_df[2, ], "usgs_id", sep = ", ")$usgs_id
-    # tidyr::separate_rows(ref_tbl[2, ], any_of(id_col), sep = ", ")
     forecast_df <- lapply(1:nrow(station_df), function(k) {
-      k = 1
-      # logger::log_info("Getting district {unique(site_df[i, ]$district)} snotel data...")
+      # k = 1
 
-      # unique(site_df[i, ]$basin)
-      # ids <- tidyr::separate_rows(site_df[i, ], site_id, sep = ", ")$site_id
-      # unique(site_df[i, ]$basin)
-      # ids <- tidyr::separate_rows(site_df[i, ], any_of(id_col), sep = ", ")[[id_col]]
-
+      # parse/clean USGS IDs
       ids <- stringr::str_replace_all(
         tidyr::separate_rows(station_df[k, ], any_of(id_col), sep = ", ")[[id_col]],
         "[^[:alnum:]]", ""
       )
-      # i
-      state = "CO"
-      network = "USGS"
-      element_cd = "SRVO"
-      forecast_period = "APR-JUL"
 
-      ids2 = ids[1:3]
-      ids2 <- c(ids2, "sdfhfjs")
+
+      # state = "CO"
+      # network = "USGS"
+      # element_cd = "SRVO"
+      # forecast_period = "APR-JUL"
+      # ids2 = ids[1:3]
+      # ids2 <- c(ids2, "sdfhfjs")
       # ids2 = "06700000"
+
+      # get forecast data
       fx <- get_forecast_data(
-                  station_code    = ids2,
+                  station_code    = ids,
                   forecast_period = forecast_period,
                   element_cd      = element_cd,
                   network         = network,
                   state           = state
                   )
-      fx$usgs_id %>% unique()
+
       # clean up output datasets
       fx <-
         fx %>%
@@ -834,9 +819,12 @@ batch_get_forecasts <- function(station_df,
           ) %>%
         dplyr::relocate(basin, district)
 
-      snotel
+      fx
 
-    })
+    }) %>%
+      dplyr::bind_rows()
+
+    return(forecast_df)
 }
 
 get_snotel_peaks <- function(
