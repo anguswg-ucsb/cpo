@@ -48,16 +48,23 @@ library(AOI)
 library(nhdplusTools)
 library(sf)
 
-source("R/get_netamounts.R")
+source("R/utils.R")
+# source("R/get_netamounts.R")
+
+# local path to waterdistricts shape
+# districts_path <- "data/water_districts_simple.geojson"
+# gnis_path      <- "data/nhd_gnis_id_flines.rds"
+# wr_gnis_path   <- "data/rights_by_gnis_id.rds"
+# gnis_lst_path <- "data/district_gnisids.rds"
+
+# # path to district snotel
+# snotel_path <- "data/district_snotel_table.csv"
 
 # local path to waterdistricts shape
 districts_path <- "data/water_districts_simple.geojson"
-gnis_path      <- "data/nhd_gnis_id_flines.rds"
-# wr_gnis_path   <- "data/rights_by_gnis_id.rds"
-gnis_lst_path <- "data/district_gnisids.rds"
 
-# path to district snotel
-snotel_path <- "data/district_snotel_table.csv"
+# annual data
+annual_path  <-  "data/annual_model_data.rds"
 
 # path to reference table
 ref_tbl_path <- "data/reference_tables/district_lookup_table.csv"
@@ -65,55 +72,66 @@ ref_tbl_path <- "data/reference_tables/district_lookup_table.csv"
 # reference table with USGS and Snotel IDs for each district
 ref_tbl <- readr::read_csv(ref_tbl_path)
 
+# dates to get data for
+start_date = "1980-01-01"
+end_date   = Sys.Date()
+# start_date = "2010-01-01"
+# end_date   = "2012-01-01"
+
+# basin to get data for
+basins <- c("South Platte")
+
 # ***************************
 # ---- get GNIS ID lines ----
 # ***************************
 
 # check if mainstem data path exists
-if(file.exists(gnis_lst_path)) {
+if(file.exists(annual_path)) {
 
-  message(paste0("Reading data from ---> ", gnis_path))
+  message(paste0("Reading data from ---> ", annual_path))
 
-  gnisid_df <- readRDS(gnis_lst_path)
+  annual_data <- readRDS(annual_path)
 
   if(file.exists(districts_path)) {
 
     message(paste0("Reading data from ---> ", districts_path))
 
-    dist_shp <- sf::read_sf(districts_path)
+    dist_shp <-
+      districts_path %>%
+      sf::read_sf() %>%
+      dplyr::filter(BASIN %in% basins) %>%
+      dplyr::arrange(DISTRICT)
 
   } else {
+
     stop(paste0("Data not found at path ---> ", districts_path))
+
   }
 
 } else {
 
-  message(paste0("Data not found at path ---> ", gnis_lst_path))
-
   if(file.exists(districts_path)) {
 
     message(paste0("Reading data from ---> ", districts_path))
 
-    dist_shp <- sf::read_sf(districts_path)
+    dist_shp <-
+      districts_path %>%
+      sf::read_sf() %>%
+      dplyr::filter(BASIN %in% basins) %>%
+      dplyr::arrange(DISTRICT)
+
 
   } else {
+
     stop(paste0("Data not found at path ---> ", districts_path))
+
   }
 
-  # i = 1
-
   # loop over each huc4 and get mainstem of the river
-  gnisid_df <- lapply(1:nrow(dist_shp), function(i) {
-  # gnisids <- lapply(1:3, function(i) {
+  annual_data <- lapply(1:nrow(dist_shp), function(i) {
 
-    message(paste0(i, "/", nrow(dist_shp)))
-
-    # mapview::mapview(gnis)
-    # i = 5
-    # dist_shp$DISTRICT
-    # nhdplusTools::get_nwis(sf::st_buffer(gnis, 5))
-
-    # i = 8
+    message(paste0("District: ", dist_shp[i, ]$DISTRICT, " - (", i, "/", nrow(dist_shp), ")"))
+    message(paste0("Pulling NHDPlus network data..."))
 
     # pull GNIS ID data
     gnis <- nhdplusTools::get_nhdplus(
@@ -122,6 +140,53 @@ if(file.exists(gnis_lst_path)) {
     )
 
     tryCatch({
+
+      message(paste0("Locating mainstem rivers..."))
+
+      # get lowest stream levels in AOI
+      tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1:2]
+
+      # lowest hydrologic point in district
+      downstream_fline <-
+        gnis %>%
+        dplyr::filter(streamcalc != 0) %>%
+        dplyr::filter(streamleve %in% tops) %>%
+        # dplyr::filter(streamorde >= 2) %>%
+        dplyr::mutate(dplyr::across(c(-geometry), as.character)) %>%
+        # dplyr::group_by(terminalpa) %>%
+        dplyr::group_by(streamleve) %>%
+        dplyr::slice_min(hydroseq)
+
+      # get upstream mainstem network from lowest hydrologic point in district
+      um_net <-  lapply(1:length(unique(downstream_fline$comid)), function(y) {
+
+        net <- nhdplusTools::navigate_network(
+          start    = as.integer(unique(downstream_fline$comid)[y]),
+          mode     = "UM",
+          distance = 300
+        ) %>%
+          dplyr::mutate(origin_comid = as.character(unique(downstream_fline$comid)[y])) %>%
+          dplyr::mutate(dplyr::across(c(-geometry), as.character))
+
+        net
+
+      }) %>%
+        dplyr::bind_rows()
+
+      # max flow lines for each streamlevel
+      max_fline <-
+        um_net %>%
+        sf::st_filter(
+          sf::st_transform(dist_shp[i, ], 4269),
+          .predicate = st_within
+          ) %>%
+        dplyr::group_by(origin_comid) %>%
+        dplyr::slice_max(hydroseq)
+
+      message("Mainstem rivers:\n", paste0(unique(max_fline$gnis_name), sep = "\n"))
+
+      # mapview::mapview(um_net, color = "green") + mapview::mapview(max_fline, color = "red") + dist_shp[i, ]
+
       # # get upstream GNIS IDs of the longest GNIS ID
       # upstreams <-
       #   gnis %>%
@@ -147,113 +212,109 @@ if(file.exists(gnis_lst_path)) {
       #   ) %>%
       #   dplyr::arrange(-len) %>%
       #   dplyr::ungroup() %>%
+      #   # dplyr::group_by(district, gnis_id, gnis_name) %>%
+      #   dplyr::group_by(district, gnis_id, gnis_name, streamorde) %>%
+      #   dplyr::summarise(
+      #     len = sum(len, na.rm = T)
+      #   ) %>%
+      #   # dplyr::ungroup() %>%
+      #   dplyr::arrange(-len) %>%
+      #   dplyr::ungroup() %>%
       #   dplyr::filter(gnis_id != "no_gnis_id") %>%
+      #   dplyr::mutate(streamorde = as.numeric(streamorde)) %>%
+      #   dplyr::arrange(-streamorde, -len) %>%
       #   dplyr::slice_max(len) %>%
-      #   dplyr::mutate(uid = paste0(district, "_", gnis_id)) %>%
-      #   dplyr::select(uid, district, gnis_id, gnis_name, streamorde, len, unit, geometry)
-      #   # dplyr::select(uid, district, gnis_id, gnis_name, structure_name, structure_type, streamorde, len, unit, geometry)
-
-      # get upstream GNIS IDs of the longest GNIS ID
-      upstreams <-
-        gnis %>%
-        dplyr::filter(streamcalc != 0) %>%
-        dplyr::filter(streamorde >= 3) %>%
-        dplyr::mutate(dplyr::across(c(-geometry), as.character)) %>%
-        dplyr::group_by(gnis_id, gnis_name, streamorde) %>%
-        dplyr::summarise() %>%
-        dplyr::mutate(
-          gnis_id    = dplyr::case_when(
-            gnis_id == " " & gnis_name == " " ~ "no_gnis_id",
-            gnis_id == " " & gnis_name != " " ~ gnis_name,
-            TRUE                              ~ gnis_id
-          ),
-          gnis_name    = dplyr::case_when(
-            gnis_name == " " & gnis_id %in%  c(" ", "no_gnis_id")  ~ "no_gnis_name",
-            gnis_name == " " & !gnis_id %in%  c(" ", "no_gnis_id") ~ gnis_id,
-            TRUE                                                   ~ gnis_name
-          ),
-          district   = dist_shp$DISTRICT[i],
-          len        = units::drop_units(sf::st_length(geometry)),
-          unit       = "meters"
-        ) %>%
-        dplyr::arrange(-len) %>%
-        dplyr::ungroup() %>%
-        # dplyr::group_by(district, gnis_id, gnis_name) %>%
-        dplyr::group_by(district, gnis_id, gnis_name, streamorde) %>%
-        dplyr::summarise(
-          len = sum(len, na.rm = T)
-        ) %>%
-        # dplyr::ungroup() %>%
-        dplyr::arrange(-len) %>%
-        dplyr::ungroup() %>%
-        dplyr::filter(gnis_id != "no_gnis_id") %>%
-        dplyr::mutate(streamorde = as.numeric(streamorde)) %>%
-        dplyr::arrange(-streamorde, -len) %>%
-        dplyr::slice_max(len) %>%
-        dplyr::mutate(uid = paste0(district, "_", gnis_id))
-
-      # most upstream flowline of district mainstem
-      max_fline <-
-        gnis %>%
-        dplyr::filter(gnis_id %in% c(upstreams$gnis_id)) %>%
-        dplyr::slice_max(hydroseq)
+      #   dplyr::mutate(uid = paste0(district, "_", gnis_id))
+      #
+      # message("Mainstem rivers:\n", paste0( unique(upstreams$gnis_name, sep = "\n")))
+      #
+      # # most upstream flowline of district mainstem
+      # max_fline <-
+      #   gnis %>%
+      #   dplyr::filter(gnis_id %in% c(upstreams$gnis_id)) %>%
+      #   dplyr::slice_max(hydroseq)
 
       # get water rights information around most upstream of mainstems
       wr_net <- cdssr::get_water_rights_netamount(
         water_district    = dist_shp$DISTRICT[i]
         # aoi    =  sf::st_centroid(max_fline),
         # radius = 5
-        # water
       )
 
-    # make points out of water rights transactions tdata
-     pts <-
-       wr_net %>%
-       dplyr::mutate(
-         lon     = longitude,
-         lat     = latitude,
-         gnis_id = sub("^0+", "", gnis_id)
-       ) %>%
-       sf::st_as_sf( coords = c("longitude", "latitude"), crs = 4326) %>%
-       # dplyr::filter(gnis_id == max_fline$gnis_id)
-       dplyr::filter(gnis_id == max_fline$gnis_id,  !grepl("GROUNDWATER", water_source))
+      message(paste0("Determing most upstream water right on rivers"))
 
-     # mapview::mapview(max_fline) + pts
+      # make points out of water rights transactions tdata
+      pts <-
+        wr_net %>%
+        dplyr::tibble() %>%
+        dplyr::mutate(
+          lon     = longitude,
+          lat     = latitude,
+          gnis_id = sub("^0+", "", gnis_id)
+        ) %>%
+        dplyr::filter(!is.na(longitude) | !is.na(latitude)) %>%
+        sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
 
-     # find feature nearest to uppermost flow line of GNIS ID in each district
-     pts <- pts[sf::st_nearest_feature(max_fline, pts), ]
+      # if max_fline has a gnis_id then filter points down to that GNIS ID
+      if (all(max_fline$gnis_id != " ")) {
 
-     # drop point geometry and just keep WDID info
-     pts <-
-       pts %>%
-       sf::st_drop_geometry() %>%
-       dplyr::select(
-         district = water_district,
-         wdid, gnis_id, water_source,
-         appropriation_date, admin_number, lon, lat
-         ) %>%
-       dplyr::mutate(
-         district = ifelse(district < 10, paste0("0", district), district)
-       )
+        if(all(max_fline$gnis_id %in% pts$gnis_id)) {
 
-     message("Pausing iteration for 2 minutes...")
+          # Filter points down to GNIS ID of interest
+          # pts <- dplyr::filter(pts, gnis_id %in% max_fline$gnis_id)
+          pts <- dplyr::filter(pts, gnis_id %in% max_fline$gnis_id,  !grepl("GROUNDWATER", water_source))
+        }
 
-     # add pause in loop as to not overwhelm CDSS resources
-     Sys.sleep(180)
+      }
 
-     message("Iteration resuming...")
+      # find feature nearest to uppermost flow line of GNIS ID in each district
+      pts <- pts[sf::st_nearest_feature(sf::st_transform(max_fline, 4326), pts), ]
 
-     # go get Out of Priority percent data
-     calls <- get_call_data2(
-       wdid_df    = pts,
-       # start_date = "2007-01-01",
-       # end_date   = "2014-01-01"
-       start_date = "1980-01-01",
-       end_date   = Sys.Date()
-     )
+      # plot(dist_shp[i, ]$geometry)
+      # plot(pts$geometry, add = T)
+      # plot(um_net$geometry, add = T)
+      # plot(max_fline$geometry, lwd = 3, col = "red", add = T)
+      # mapview::mapview(pts) + max_fline + um_net + dist_shp[i, ]
+
+      # drop point geometry and just keep WDID info
+      pts <-
+        pts %>%
+        sf::st_drop_geometry() %>%
+        dplyr::select(
+           district = water_district,
+           wdid, gnis_id, water_source,
+           appropriation_date, admin_number, lon, lat
+           ) %>%
+        dplyr::mutate(
+          district = ifelse(district < 10, paste0("0", district), district)
+        )
+
+      message("Upstream water right WDID:\n", paste0(unique(pts$wdid), sep = "\n"))
+
+       calls <- lapply(1:nrow(pts), function(y) {
+         message("Pausing iteration for 2.5 minutes...")
+
+         # add pause in loop as to not overwhelm CDSS resources
+         Sys.sleep(150)
+
+         message("Iteration resuming...")
+
+         # go get Out of Priority percent data
+         req_data <- get_call_data2(
+           wdid_df    = pts[y, ],
+           start_date = start_date,
+           end_date   = end_date
+           # start_date = "1980-01-01",
+           # end_date   = Sys.Date()
+         )
+
+         req_data
+
+       }) %>%
+         dplyr::bind_rows()
 
      # get average call year data
-     calls2 <-
+     calls <-
        calls %>%
        dplyr::tibble() %>%
        dplyr::select(
@@ -274,13 +335,13 @@ if(file.exists(gnis_lst_path)) {
 
      # calculate average call year across entire year
      avg_year <-
-       calls2 %>%
-       dplyr::group_by(year) %>%
+       calls %>%
+       dplyr::group_by(wdid, year) %>%
        dplyr::mutate(
          avg_call_year = mean(call_year, na.rm = T)
        ) %>%
        dplyr::ungroup() %>%
-       dplyr::group_by(year) %>%
+       dplyr::group_by(wdid, year) %>%
        dplyr::slice(1) %>%
        dplyr::ungroup()
        # names()
@@ -289,24 +350,15 @@ if(file.exists(gnis_lst_path)) {
      #   ggplot2::ggplot() +
      #   ggplot2::geom_line(ggplot2::aes(x = datetime, y = avg_call_year))
 
-     # # go get the snotel data
-     # snotel_sites <-
-     #   snotel_path %>%
-     #   readr::read_csv(show_col_types = FALSE) %>%
-     #   dplyr::filter(district == ifelse(
-     #                               dist_shp$DISTRICT[i] < 10,
-     #                               paste0("0", dist_shp$DISTRICT[i]),
-     #                               paste0(dist_shp$DISTRICT[i]))
-     #                               )
-
      # subset reference table
      sites_df <-
        ref_tbl %>%
         dplyr::filter(district == ifelse(
-          dist_shp$DISTRICT[i] < 10,
-          paste0("0", dist_shp$DISTRICT[i]),
-          paste0(dist_shp$DISTRICT[i]))
-        )
+                                  dist_shp$DISTRICT[i] < 10,
+                                  paste0("0", dist_shp$DISTRICT[i]),
+                                  paste0(dist_shp$DISTRICT[i])
+                                  )
+                                )
 
      # get snotel data from snotel_id in sites_df
      snotel_df <- get_snotel_peaks(
@@ -325,6 +377,7 @@ if(file.exists(gnis_lst_path)) {
        network         = "USGS"
      )
 
+     # calculate sum across all forecasts point for the given district for each month
      nrcs <-
        nrcs_df %>%
        dplyr::mutate(
@@ -362,8 +415,10 @@ if(file.exists(gnis_lst_path)) {
      #                                    "_exceed_val")))
 
 
+     # final join of all data
      final <-
        avg_year %>%
+       dplyr::mutate(district = as.character(district)) %>%
        dplyr::select(district, wdid, gnis_id, water_source, approp_date, year, avg_call_year) %>%
        dplyr::mutate(
          year = as.character(year)
@@ -377,10 +432,12 @@ if(file.exists(gnis_lst_path)) {
          nrcs,
          by = "year"
        )
-     final %>%
-     ggplot2::ggplot() +
-       ggplot2::geom_point(ggplot2::aes(x = may_swe, y = avg_call_year))
-     # final <-
+
+     # annual_data %>%
+     # ggplot2::ggplot() +
+     #   ggplot2::geom_point(ggplot2::aes(x = may_swe, y = avg_call_year, color = district))
+
+     final
 
      }, error = function(e) {
 
@@ -393,79 +450,12 @@ if(file.exists(gnis_lst_path)) {
 
   }) %>%
     dplyr::bind_rows()
+
   # sprintf("%.5s", sub_flines$gnis_id[1])
-  message(paste0("Saving data to path ---> ", gnis_lst_path))
+  message(paste0("Saving data to path ---> ", annual_path))
 
   # save rds
-  saveRDS(gnisid_df, gnis_lst_path)
+  saveRDS(annual_data, annual_path)
 
 }
 
-
-wr_net
-gnisid_df %>%
-  dplyr::mutate(uid = paste0(district, "_", gnis_id))
-gnisid_df$gnis_id
-# remove leading 0s
-
-wr_net <-
-  wr_net %>%
-  dplyr::mutate(
-    district = ifelse(water_district < 10, paste0("0", water_district), water_district),
-    gnis_id = sub("^0+", "", gnis_id),
-    uid = paste0(district, "_", gnis_id)
-    )
-
-wr_net$gnis_id <- sub("^0+", "", wr_net$gnis_id)
-tmp <-
-  wr_net %>%
-  dplyr::filter(uid %in% unique(gnisids$uid)) %>%
-  dplyr::group_by(uid)
-tmp
-
-if(file.exists(wr_gnis_path)) {
-
-  message(paste0("Reading data from ---> ", wr_gnis_path))
-
-  wr_gnis <- readRDS(wr_gnis_path)
-
-} else {
-  # gnis_flines <- gnis
-  # filter GNIS IDs to streamorders greater than or equal to 4
-  # filter gnis IDs with missing names
-  # filter out stream flines less than 10,000 meters
-  gnis_trim <-
-    gnis_flines %>%
-    dplyr::filter(streamorde >= 4) %>%
-    dplyr::filter(len > 10000, gnis_id != "no_gnis_id")
-
-  # remove leading 0s
-  wr_pts$gnis_id <- sub("^0+", "", wr_pts$gnis_id)
-
-  wr_gnis <-
-    wr_pts %>%
-    dplyr::filter(gnis_id %in% gnis_trim$gnis_id) %>%
-    dplyr::group_by(gnis_id) %>%
-    dplyr::slice(
-      which.min(as.Date(appropriation_date)),
-      which.max(as.Date(appropriation_date)),
-      which(as.Date(appropriation_date) == median(as.Date(appropriation_date)))[1]
-      # which(as.Date(appropriation_date) == median(as.numeric(as.Date(appropriation_date))))[1]
-    ) %>%
-    dplyr::ungroup() %>%
-    dplyr::group_by(gnis_id) %>%
-    dplyr::mutate(
-      seniority = dplyr::case_when(
-        as.Date(appropriation_date) == min(as.Date(appropriation_date)) ~ "senior",
-        as.Date(appropriation_date) == max(as.Date(appropriation_date)) ~ "junior",
-        TRUE                                                            ~ "median"
-      )
-    ) %>%
-    dplyr::ungroup()
-
-  message(paste0("Saving data to path ---> ", wr_gnis_path))
-
-  # save rds
-  saveRDS(wr_gnis, wr_gnis_path)
-
-}
