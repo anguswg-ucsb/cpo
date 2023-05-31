@@ -266,10 +266,10 @@ if(file.exists(annual_path)) {
       message("Upstream water right WDID:\n", paste0(unique(pts$wdid), sep = "\n"))
 
        calls <- lapply(1:nrow(pts), function(y) {
-         message("Pausing iteration for 2.5 minutes...")
+         message("Pausing iteration for 3 minutes...")
 
          # add pause in loop as to not overwhelm CDSS resources
-         # Sys.sleep(150)
+         Sys.sleep(180)
 
          message("Iteration resuming...")
 
