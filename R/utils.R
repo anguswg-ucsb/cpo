@@ -613,6 +613,151 @@ make_soap_body <- function(forecast_period, station_code, element_cd, network, s
 
 }
 
+make_soap_body_pubdate <- function(station_code, element_cd, forecast_period, begin_date, end_date, state, network) {
+  # Create SOAP request body
+  body <- paste0(
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:q0="http://www.wcc.nrcs.usda.gov/ns/awdbWebService" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
+    '  <SOAP-ENV:Body>',
+    '    <q0:getForecastsByPubDate>',
+    '      <stationTriplet>',  station_code, ':', state, ':', network, '</stationTriplet>',
+    '      <elementCd>', element_cd, '</elementCd>',
+    '      <forecastPeriod>', forecast_period, '</forecastPeriod>',
+    '      <beginPublicationDate>', begin_date, '</beginPublicationDate>',
+    '      <endPublicationDate>', end_date, '</endPublicationDate>',
+    '    </q0:getForecastsByPubDate>',
+    '  </SOAP-ENV:Body>',
+    '</SOAP-ENV:Envelope>'
+  )
+
+  return(xml2::read_xml(body))
+}
+
+get_forecast_pubdate_data <- function(
+    station_code,
+    element_cd,
+    forecast_period,
+    begin_date,
+    end_date,
+    state,
+    network
+) {
+
+  # station_code    = ids
+  # forecast_period = "APR-JUL"
+  # begin_date = "1970-01-01"
+  # end_date ="2023-05-01"
+  # state = "CO"
+  # network = "USGS"
+
+  # station_df      = sites_df
+  # # station_df      =   ref_tbl[1, ],
+  # element_cd      = "SRVO"
+  # forecast_period = fx_periods[5]
+  # # forecast_period = "APR-JUL",
+  # state           = "CO"
+  # network         = "USGS"
+  # i = 1
+
+  res <- lapply(1:length(station_code), function(i) {
+
+    # tryCatch({
+      # i= 1
+    #   station_code = "06694920"
+
+    # Create SOAP request body
+    body <- make_soap_body_pubdate(station_code[i], element_cd, forecast_period,  begin_date, end_date, state, network)
+
+    # Save body as temporary XML file
+    temp_file <- tempfile(fileext = ".xml")
+
+    # write body to temporary file
+    xml2::write_xml(body, temp_file)
+
+    # NRCS SOAP API Client
+    NRCS_URL = 'https://wcc.sc.egov.usda.gov/awdbWebService/services?WSDL'
+
+    r <- httr::POST(NRCS_URL, body = httr::upload_file(temp_file))
+
+    # Check the status code
+    if (r$status_code == 200) {
+
+      # Process the response
+      resp_data <-
+        r %>%
+        httr::content() %>%
+        xml2::as_list()
+
+      # Delete the temporary XML file
+      file.remove(temp_file)
+
+      message("Getting forecast data - Station code: ", station_code[i])
+      # z = 1
+      fx <- lapply(1:length(resp_data$Envelope$Body$getForecastsByPubDateResponse), function(z) {
+
+        rows <- resp_data$Envelope$Body$getForecastsByPubDateResponse[[z]]
+        # resp_data$Envelope$Body$getForecastsByPubDateResponse
+
+        row_lst <- lapply(rows, unlist)
+
+        final <- data.frame(
+          exceedance_prob = unlist(row_lst[names(row_lst) == "exceedenceProbabilities"]),
+          exceedance_vals = as.numeric(unlist(
+            purrr::map(row_lst[names(row_lst) == "exceedenceValues"], ~if (is.null(.x)) NA else .x)))
+        )
+
+        if (all(is.na(final$exceedance_vals))) {
+
+          NULL
+
+        } else {
+
+          final <-
+            final %>%
+            dplyr::tibble() %>%
+            dplyr::mutate(
+              element_cd      = row_lst$elementCd,
+              station_triplet = row_lst$stationTriplet,
+              date            = row_lst$calculationDate,
+              pub_date        = row_lst$publicationDate,
+              forecast_period = row_lst$forecastPeriod
+            ) %>%
+            tidyr::separate(station_triplet, into = c("usgs_id", "state", "network"), sep = ":",
+                            remove = FALSE) %>%
+            dplyr::select(date, pub_date,forecast_period,  usgs_id, station_triplet,
+                          element_cd, exceedance_prob, exceedance_vals)
+
+          final
+        }
+
+      }) %>%
+        dplyr::bind_rows()
+
+      fx
+
+    } else {
+
+      message("Error occurred for station code: ", station_code[i], ". Status code: ", r$status_code)
+
+      NULL
+
+    }
+    # }, error = function(e) {
+    #   message("Error occurred for station code: ", station_code[i])
+    #
+    #   NULL
+    #
+    # })
+
+  }) %>%
+    dplyr::bind_rows()
+
+  # result_df <- do.call(rbind, res)
+
+  return(res)
+
+}
+
 get_forecast_data <- function(
     station_code,
     forecast_period,
@@ -620,7 +765,14 @@ get_forecast_data <- function(
     network,
     state
 ) {
-
+  # station_df      = sites_df
+  # # station_df      =   ref_tbl[1, ],
+  # element_cd      = "SRVO"
+  # forecast_period = fx_periods[5]
+  # # forecast_period = "APR-JUL",
+  # state           = "CO"
+  # network         = "USGS"
+  # i = 1
   res <- lapply(1:length(station_code), function(i) {
 
     # tryCatch({
@@ -654,6 +806,7 @@ get_forecast_data <- function(
         file.remove(temp_file)
 
         message("Getting forecast data - Station code: ", station_code[i])
+        # z = 1
 
         fx <- lapply(1:length(resp_data$Envelope$Body$getForecastsResponse), function(z) {
 
@@ -781,10 +934,11 @@ batch_get_forecasts <- function(station_df,
                                 network,
                                 state) {
   # station_df <- sites_df
+  # id_col = "usgs_id"
   # station_df <- ref_tbl[2, ]
 
     forecast_df <- lapply(1:nrow(station_df), function(k) {
-      # k = 1
+
 
       # parse/clean USGS IDs
       ids <- stringr::str_replace_all(
@@ -792,18 +946,22 @@ batch_get_forecasts <- function(station_df,
         "[^[:alnum:]]", ""
       )
 
-
-      # state = "CO"
-      # network = "USGS"
-      # element_cd = "SRVO"
-      # forecast_period = "APR-JUL"
+      # station_code    = ids
+      # station_df      = sites_df
+      # # station_df      =   ref_tbl[1, ],
+      # element_cd      = "SRVO"
+      # forecast_period = fx_periods[j]
+      # # forecast_period = "APR-JUL",
+      # state           = "CO"
+      # network         = "USGS"
       # ids2 = ids[1:3]
       # ids2 <- c(ids2, "sdfhfjs")
       # ids2 = "06700000"
 
       # get forecast data
-      fx <- get_forecast_data(
+      fx2 <- get_forecast_data(
                   station_code    = ids,
+                  # forecast_period = forecast_period,
                   forecast_period = forecast_period,
                   element_cd      = element_cd,
                   network         = network,
@@ -827,6 +985,84 @@ batch_get_forecasts <- function(station_df,
     return(forecast_df)
 }
 
+batch_get_forecasts_pubdate <- function(
+    station_df,
+    element_cd,
+    forecast_period,
+    begin_date,
+    end_date,
+    state = "CO",
+    network = "USGS",
+    id_col = "usgs_id"
+    ) {
+  # station_df      = sites_df
+  # element_cd      = "SRVO"
+  # forecast_period = fx_periods[j]
+  # begin_date      = "1970-01-01"
+  # end_date        = "2023-01-01"
+  # state           = "CO"
+  # network         = "USGS"
+  # # station_df    = ids
+  # station_df <- sites_df
+  # forecast_period = "APR-JUL"
+  # begin_date = "1970-01-01"
+  # end_date ="2023-05-01"
+  # state = "CO"
+  # network = "USGS"
+
+  # station_df <- sites_df
+  # id_col = "usgs_id"
+  # station_df <- ref_tbl[2, ]
+
+  forecast_df <- lapply(1:nrow(station_df), function(k) {
+
+# k = 1
+    # parse/clean USGS IDs
+    ids <- stringr::str_replace_all(
+      tidyr::separate_rows(station_df[k, ], any_of(id_col), sep = ", ")[[id_col]],
+      "[^[:alnum:]]", ""
+    )
+
+    # station_code    = ids
+    # station_df      = sites_df
+    # # station_df      =   ref_tbl[1, ],
+    # element_cd      = "SRVO"
+    # forecast_period = fx_periods[j]
+    # # forecast_period = "APR-JUL",
+    # state           = "CO"
+    # network         = "USGS"
+    # ids2 = ids[1:3]
+    # ids2 <- c(ids2, "sdfhfjs")
+    # ids2 = "06700000"
+
+    # get forecast data
+    fx <- get_forecast_pubdate_data(
+      station_code    = ids,
+      element_cd      = element_cd,
+      forecast_period = forecast_period,
+      begin_date      = begin_date,
+      end_date        = end_date,
+      network         = network,
+      state           = state
+    )
+
+    # clean up output datasets
+    fx <-
+      fx %>%
+      dplyr::mutate(
+        basin    = unique(station_df[k, ]$basin),
+        district = unique(station_df[k, ]$district)
+      ) %>%
+      dplyr::relocate(basin, district)
+
+    fx
+
+  }) %>%
+    dplyr::bind_rows()
+
+  return(forecast_df)
+}
+
 get_snotel_peaks <- function(
     site_df,
     id_col = "site_id"
@@ -834,62 +1070,8 @@ get_snotel_peaks <- function(
     # start_lag = 3,
     # end_lag   = 12
 ) {
-  # site_df <-
-  #   snotel_sites
-  # %>%
-  #   dplyr::filter(district == "02")
-  # path to snotel data
-  # snotel_path <- "data/all_snotel_co.rds"
-
-  # district shape path
-  # district_path <- "data/water_districts_simple.geojson"
-
-  # site_path <- "data/snotel_sites.csv"
-
-  # water districts shape
-  # dists   <- sf::read_sf(district_path)
-
-  # read in snotel data
-  # site_df <- readr::read_csv(site_path)
-
-  # # read in snotel data
-  # site_df <- readr::read_csv(site_path)
-  # missing_sites <- readr::read_csv(missing_sites_path)
-  # dists2 <- sf::st_join(
-  #       dists,
-  #       sf::st_as_sf(site_df, coords = c("lon", "lat"), crs = 4326)
-  #     ) %>%
-  #     dplyr::filter(!is.na(site_id)) %>%
-  #     sf::st_drop_geometry() %>%
-  #     dplyr::rename(district = DISTRICT) %>%
-  #     dplyr::group_by(district) %>%
-  #     dplyr::summarise(
-  #       site_id = paste(site_id, collapse = ", ")
-  #     ) %>%
-  #     dplyr::bind_rows(missing_sites) %>%
-  #     dplyr::left_join(
-  #       dplyr::select(
-  #         sf::st_drop_geometry(dists),
-  #         basin = BASIN,
-  #         district = DISTRICT
-  #       ),
-  #       by = "district"
-  #     ) %>%
-  #     dplyr::relocate(basin, district, site_id)
-  #   readr::write_csv(dists2, "data/district_snotel_table.csv")
-  #   sf::st_write(site_pts2, "snotel_sites_pts.gpkg")
-  #   sf::st_write(dists2, "districts_with_snotel_ids.gpkg")
-  #   dists2 %>%
-  #     dplyr::mutate(
-  #       needs_snotel = dplyr::case_when(
-  #         is.na(site_id) ~ "YES",
-  #         TRUE ~ "NO")) %>%
-  #     ggplot2::ggplot() +
-  #     ggplot2::geom_sf(ggplot2::aes(fill = needs_snotel)) +
-  #     ggplot2::geom_sf(data = site_pts2)
-  # site_df %>%
-  #   sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) %>%
-  #   mapview::mapview() + dists
+  # site_df <- sites_df
+  # id_col = "snotel_id"
 
   # # Convert the sequence to a data frame
   # date_df <-
@@ -961,8 +1143,20 @@ get_snotel_peaks <- function(
   yearly_peak <-
     snotel_df %>%
     dplyr::mutate(
-      year = as.character(lubridate::year(datetime))
+      year = as.character(lubridate::year(datetime)),
+      month = lubridate::month(datetime),
+      day = lubridate::day(datetime)
+
     ) %>%
+    dplyr::filter(month <= 5) %>%
+    dplyr::mutate(
+      mask = dplyr::case_when(
+        month == 5 & day > 1 ~ "remove",
+        TRUE                 ~ "keep"
+      )
+    ) %>%
+    dplyr::filter(mask == "keep") %>%
+    dplyr::select(-mask) %>%
     dplyr::group_by(basin, district, year) %>%
     dplyr::summarize(
       peak_swe = max(swe, na.rm = T)
@@ -988,161 +1182,6 @@ get_snotel_peaks <- function(
       )
 
   return(final_swe)
-
-
-  # # join daily district SWE values w/ weekly date dataframe and calc avg swe per week per district
-  # snotel_df <-
-  #   snotel_df %>%
-  #   dplyr::mutate(
-  #     # year     = lubridate::year(datetime),
-  #     # week_num = strftime(datetime, format = "%V"),
-  #     year_week = paste0(lubridate::year(datetime), "_",  strftime(datetime, format = "%V"))
-  #   ) %>%
-  #   dplyr::filter(year_week %in% unique(date_df$year_week)) %>%
-  #   dplyr::left_join(
-  #     date_df,
-  #     relationship = "many-to-many",
-  #     by           = c("year_week")
-  #     # by           = c("year", "week_num")
-  #   ) %>%
-  #   dplyr::group_by(basin, district, date) %>%
-  #   dplyr::summarise(
-  #     swe = mean(swe, na.rm =T)
-  #   ) %>%
-  #   dplyr::ungroup()
-  # # dplyr::filter(!is.na(date))
-  #
-  # # remove NAs in date column
-  # snotel_df <- dplyr::filter(snotel_df, !is.na(date))
-  #
-  # # get complete date range to fill out missing dates for some snotel sites
-  # date_range <-
-  #   snotel_df %>%
-  #   # dplyr::filter(basin == "South Platte") %>%
-  #   dplyr::group_by(basin) %>%
-  #   dplyr::add_count() %>%
-  #   dplyr::ungroup() %>%
-  #   dplyr::slice_max(n) %>%
-  #   dplyr::select(date) %>%
-  #   dplyr::distinct()
-  #
-  # expanded_df  <-
-  #   snotel_df %>%
-  #   tidyr::complete(district, date = date_range$date) %>%
-  #   dplyr::left_join(
-  #     dplyr::distinct(dplyr::select(snotel_df, basin2 = basin, district)),
-  #     by = "district"
-  #   ) %>%
-  #   dplyr::mutate(basin = ifelse(is.na(basin), basin2, basin)) %>%
-  #   dplyr::select(-basin2) %>%
-  #   dplyr::group_by(basin, date) %>%
-  #   dplyr::mutate(swe = ifelse(is.na(swe), mean(swe, na.rm = TRUE), swe)) %>%
-  #   dplyr::ungroup() %>%
-  #   dplyr::filter(!is.na(swe))
-
-  # # add lagged SWE value by basin, default lag is 3-12 month lags
-  # snotel_df2 <-
-  #   snotel_df2 %>%
-  #   dplyr::group_by(basin, district) %>%
-  #   timetk::tk_augment_lags(swe, .lags = seq(start_lag*4, end_lag*4, 4)) %>%
-  #   stats::setNames(
-  #     c("basin", "district", "date", "swe",
-  #       paste0("swe_lag_", seq(start_lag, end_lag), "_month"))
-  #   ) %>%
-  #   dplyr::ungroup() %>%
-  #   na.omit()
-
-  # # add monthly by year and basin
-  # snotel_df <-
-  #   snotel_df %>%
-  #   dplyr::mutate(
-  #     year  = lubridate::year(date)
-  #   ) %>%
-  #   dplyr::left_join(
-  #     na.omit(
-  #       tidyr::pivot_wider(
-  #         na.omit(
-  #           dplyr::mutate(
-  #             dplyr::ungroup(
-  #               dplyr::summarise(
-  #                 dplyr::group_by(
-  #                   dplyr::mutate(snotel_df,
-  #                                 month = lubridate::month(date, label = T),
-  #                                 year  = lubridate::year(date)
-  #                   ),
-  #                   basin, month, year
-  #                 ),
-  #                 swe = max(swe, na.rm = T)
-  #               )
-  #             ),
-  #             month = tolower(month)
-  #           )
-  #         ),
-  #         names_from  = "month",
-  #         names_glue  = "{month}_{.value}",
-  #         values_from = "swe"
-  #       )
-  #     ),
-  #     by = c("basin", "year")
-  #   ) %>%
-  #   dplyr::select(-year) %>%
-  #   dplyr::ungroup()
-
-  # # calculate March, April, May peak SWE values
-  # peaks <-
-  #   expanded_df %>%
-  #   dplyr::mutate(
-  #     month = lubridate::month(date, label = T),
-  #     year  = lubridate::year(date)
-  #   ) %>%
-  #   dplyr::group_by(basin, district, month, year) %>%
-  #   dplyr::summarise(
-  #     peak_swe = round(max(swe, na.rm = T), 4)
-  #   ) %>%
-  #   dplyr::ungroup() %>%
-  #   dplyr::filter(month %in% c("Mar", "Apr", "May")) %>%
-  #   na.omit() %>%
-  #   dplyr::group_by(basin, district, year) %>%
-  #   tidyr::pivot_wider(
-  #     id_cols     = c(basin, district, year),
-  #     names_from  = month,
-  #     values_from = peak_swe
-  #   ) %>%
-  #   dplyr::ungroup() %>%
-  #   na.omit()
-  #
-  #
-  # # cleanup names
-  # names(peaks) <- c("basin", "district", "year",
-  #                   c(paste0(tolower(names(peaks))[!grepl("basin|district|year", tolower(names(peaks)))], "_swe")))
-  #
-  # # add Peak March, April, May SWE
-  # expanded_df <-
-  #   expanded_df %>%
-  #   dplyr::mutate(
-  #     year  = lubridate::year(date)
-  #   ) %>%
-  #   dplyr::left_join(
-  #     dplyr::select(peaks, -basin),
-  #     by = c("district", "year")
-  #   ) %>%
-  #   dplyr::relocate(basin, district, date, swe, mar_swe, apr_swe, may_swe) %>%
-  #   dplyr::select(-year) %>%
-  #   dplyr::mutate(dplyr::across(where(is.numeric), \(x) round(x, 3))) %>%
-  #   dplyr::mutate(
-  #     district = ifelse(district < 10, paste0("0", district), district)
-  #   )
-
-  # expanded_df %>%
-  #   dplyr::select(-swe) %>%
-  #   tidyr::pivot_longer(cols =contains("swe")) %>%
-  #   # tidyr::pivot_longer(cols =("swe")) %>%
-  #   dplyr::filter(basin == "South Platte") %>%
-  #   ggplot2::ggplot() +
-  #   ggplot2::geom_line(ggplot2::aes(x = date, y = value, color = name), size = 1) +
-  #   ggplot2::facet_wrap(~district)
-
-  # return(expanded_df)
 
 }
 # impute missing values w/ mean
