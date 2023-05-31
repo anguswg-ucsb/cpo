@@ -1184,6 +1184,35 @@ get_snotel_peaks <- function(
   return(final_swe)
 
 }
+
+# Function to find the closest string matches in 2 vectors
+find_closest_matches <- function(
+    target_vector,
+    choices_vector
+) {
+
+  closest_matches <- sapply(target_vector, function(target) {
+
+    distances <- sapply(choices_vector, function(choice) adist(target, choice))
+    closest_match <- choices_vector[which.min(distances)]
+
+    closest_match
+
+  })
+
+  return(closest_matches)
+
+}
+
+abbrev_var <- function(variable_name) {
+
+  variable_parts <- strsplit(variable_name, "_")[[1]]
+  abbreviated_parts <- sapply(variable_parts, function(part) abbreviate(part, minlength = 3))
+  abbreviated_variable <- paste(abbreviated_parts, collapse = "_")
+  return(abbreviated_variable)
+
+}
+
 # impute missing values w/ mean
 impute_mean <- function(x) {
   replace(x, is.na(x), mean(x, na.rm = TRUE))

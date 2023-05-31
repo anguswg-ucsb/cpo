@@ -14,23 +14,14 @@ library(AOI)
 library(nhdplusTools)
 library(sf)
 
+# load in utils.R functions
 source("R/utils.R")
-# source("R/get_netamounts.R")
-
-# local path to waterdistricts shape
-# districts_path <- "data/water_districts_simple.geojson"
-# gnis_path      <- "data/nhd_gnis_id_flines.rds"
-# wr_gnis_path   <- "data/rights_by_gnis_id.rds"
-# gnis_lst_path <- "data/district_gnisids.rds"
-
-# # path to district snotel
-# snotel_path <- "data/district_snotel_table.csv"
 
 # local path to waterdistricts shape
 districts_path <- "data/water_districts_simple.geojson"
 
 # annual data
-annual_path  <-  "data/annual_model_data.rds"
+annual_path  <-  "data/annual_model_data.csv"
 
 # path to reference table
 ref_tbl_path <- "data/reference_tables/district_lookup_table.csv"
@@ -39,8 +30,11 @@ ref_tbl_path <- "data/reference_tables/district_lookup_table.csv"
 ref_tbl <- readr::read_csv(ref_tbl_path)
 
 # # dates to get data for
-start_date = "1980-01-01"
+start_date = "1970-01-01"
 end_date   = Sys.Date()
+
+# begin_date      = "1970-01-01",
+# end_date        = "2023-01-01",
 # start_date = "2010-01-01"
 # end_date   = "2015-01-01"
 
@@ -56,7 +50,7 @@ if(file.exists(annual_path)) {
 
   message(paste0("Reading data from ---> ", annual_path))
 
-  annual_data <- readRDS(annual_path)
+  annual_data <- readr::read_csv(annual_path)
 
   if(file.exists(districts_path)) {
 
@@ -94,10 +88,7 @@ if(file.exists(annual_path)) {
   }
 
   # loop over each huc4 and get mainstem of the river
-  # annual_data <- lapply(1:nrow(dist_shp), function(i) {
-  annual_data <- lapply(1:4, function(i) {
-
-    # i = 3
+  annual_data <- lapply(1:nrow(dist_shp), function(i) {
 
     message(paste0("District: ", dist_shp[i, ]$DISTRICT, " - (", i, "/", nrow(dist_shp), ")"))
     message(paste0("Pulling NHDPlus network data..."))
@@ -113,9 +104,9 @@ if(file.exists(annual_path)) {
       message(paste0("Locating mainstem rivers..."))
 
       # get lowest stream levels in AOI
-      tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1:2]
+      tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1]
+      # tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1:2]
       # tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[2]
-      # tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1]
 
       # lowest hydrologic point in district
       downstream_fline <-
@@ -124,10 +115,31 @@ if(file.exists(annual_path)) {
         dplyr::filter(streamleve %in% tops) %>%
         # dplyr::filter(streamorde >= 2) %>%
         dplyr::mutate(dplyr::across(c(-geometry), as.character)) %>%
-        # dplyr::group_by(terminalpa) %>%
         dplyr::group_by(streamleve) %>%
         dplyr::slice_min(hydroseq)
 
+      # fuzzy string matching
+      gnis_match <- find_closest_matches(
+                        dist_shp[i, ]$NAME,
+                        unique(gnis$gnis_name)
+                        )[[1]]
+
+      # match flowlines by GNIS NAME
+      downstream_fline <-
+        gnis %>%
+        dplyr::filter(
+          gnis_name == gnis_match
+        ) %>%
+        # dplyr::group_by(streamleve) %>%
+        dplyr::filter(streamleve == min(streamleve, na.rm = T)) %>%
+        dplyr::mutate(dplyr::across(c(-geometry), as.character)) %>%
+        dplyr::slice_min(hydroseq) %>%
+        dplyr::filter(!gnis_id %in% downstream_fline$gnis_id) %>%
+        dplyr::bind_rows(downstream_fline)
+
+      message("Selected downstream GNIS IDs (", length(unique(downstream_fline$gnis_name)), "):\n",
+              paste0(1:length(unique(downstream_fline$gnis_name)), ". ", unique(downstream_fline$gnis_name), sep = "\n")
+              )
       # get upstream mainstem network from lowest hydrologic point in district
       um_net <-  lapply(1:length(unique(downstream_fline$comid)), function(y) {
 
@@ -154,64 +166,19 @@ if(file.exists(annual_path)) {
         dplyr::group_by(origin_comid) %>%
         dplyr::slice_max(hydroseq)
 
-      message("Mainstem rivers:\n", paste0(unique(max_fline$gnis_name), sep = "\n"))
+      message("Mainstem rivers (", length(unique(max_fline$gnis_name)), "):\n",
+              paste0(1:length(unique(max_fline$gnis_name)), ". ", unique(max_fline$gnis_name), sep = "\n")
+              )
 
       # mapview::mapview(um_net, color = "green") + mapview::mapview(max_fline, color = "red") + dist_shp[i, ]
 
-      # # get upstream GNIS IDs of the longest GNIS ID
-      # upstreams <-
-      #   gnis %>%
-      #   dplyr::filter(streamcalc != 0) %>%
-      #   dplyr::filter(streamorde >= 3) %>%
-      #   dplyr::mutate(dplyr::across(c(-geometry), as.character)) %>%
-      #   dplyr::group_by(gnis_id, gnis_name, streamorde) %>%
-      #   dplyr::summarise() %>%
-      #   dplyr::mutate(
-      #     gnis_id    = dplyr::case_when(
-      #       gnis_id == " " & gnis_name == " " ~ "no_gnis_id",
-      #       gnis_id == " " & gnis_name != " " ~ gnis_name,
-      #       TRUE                              ~ gnis_id
-      #     ),
-      #     gnis_name    = dplyr::case_when(
-      #       gnis_name == " " & gnis_id %in%  c(" ", "no_gnis_id")  ~ "no_gnis_name",
-      #       gnis_name == " " & !gnis_id %in%  c(" ", "no_gnis_id") ~ gnis_id,
-      #       TRUE                                                   ~ gnis_name
-      #     ),
-      #     district   = dist_shp$DISTRICT[i],
-      #     len        = units::drop_units(sf::st_length(geometry)),
-      #     unit       = "meters"
-      #   ) %>%
-      #   dplyr::arrange(-len) %>%
-      #   dplyr::ungroup() %>%
-      #   # dplyr::group_by(district, gnis_id, gnis_name) %>%
-      #   dplyr::group_by(district, gnis_id, gnis_name, streamorde) %>%
-      #   dplyr::summarise(
-      #     len = sum(len, na.rm = T)
-      #   ) %>%
-      #   # dplyr::ungroup() %>%
-      #   dplyr::arrange(-len) %>%
-      #   dplyr::ungroup() %>%
-      #   dplyr::filter(gnis_id != "no_gnis_id") %>%
-      #   dplyr::mutate(streamorde = as.numeric(streamorde)) %>%
-      #   dplyr::arrange(-streamorde, -len) %>%
-      #   dplyr::slice_max(len) %>%
-      #   dplyr::mutate(uid = paste0(district, "_", gnis_id))
-      #
-      # message("Mainstem rivers:\n", paste0( unique(upstreams$gnis_name, sep = "\n")))
-      #
-      # # most upstream flowline of district mainstem
-      # max_fline <-
-      #   gnis %>%
-      #   dplyr::filter(gnis_id %in% c(upstreams$gnis_id)) %>%
-      #   dplyr::slice_max(hydroseq)
+      # add 10 second pause in loop to back off cdss resources, this one is probably not necessary
+      Sys.sleep(10)
 
-      # mapview::mapview(dist_shp[i, ])
       # get water rights information around most upstream of mainstems
       wr_net <- cdssr::get_water_rights_netamount(
-        water_district    = dist_shp$DISTRICT[i]
-        # aoi    =  sf::st_centroid(max_fline),
-        # radius = 5
-      )
+                    water_district = dist_shp$DISTRICT[i]
+                    )
 
       message(paste0("Determing most upstream water right on rivers"))
 
@@ -226,23 +193,36 @@ if(file.exists(annual_path)) {
         ) %>%
         # dplyr::filter(wdid == "0604255") %>%
         dplyr::filter(!is.na(longitude) | !is.na(latitude)) %>%
-        sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+        sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+        sf::st_filter(dist_shp[i, ]) %>%
+        dplyr::filter(!grepl("GROUNDWATER", water_source))
 
-      # mapview::mapview(dist_shp[i, ]) + pts
+      # mapview::mapview(dist_shp[i, ]) +  mapview::mapview(pts, col.region = "red") + max_fline +  mapview::mapview(tmp, col.region = "green")
+
+      # fuzzy string matching river names
+      pts_match <- find_closest_matches(toupper(dist_shp[i, ]$NAME),  unique(pts$water_source))
+
+      message("Matching river names to names in water rights data:\n", names(pts_match), " --> ",pts_match[[1]] )
+
+      pts_match <- pts_match[[1]]
+
       # if max_fline has a gnis_id then filter points down to that GNIS ID
-      if (all(max_fline$gnis_id != " ")) {
+      if (all(max_fline$gnis_id != " ") & all(max_fline$gnis_id %in% pts$gnis_id)) {
 
-        if(all(max_fline$gnis_id %in% pts$gnis_id)) {
+        message("GNIS IDs are NOT ALL blank values")
+        message("ALL GNIS IDs in max_fline are in pts gnis_id column")
 
-          # Filter points down to GNIS ID of interest
-          # pts <- dplyr::filter(pts, gnis_id %in% max_fline$gnis_id)
-          pts <- dplyr::filter(pts, gnis_id %in% max_fline$gnis_id,  !grepl("GROUNDWATER", water_source))
-        }
+        # Filter points down to GNIS ID of interest
+        pts <-
+          pts %>%
+          dplyr::filter(water_source == pts_match | gnis_id %in% max_fline$gnis_id)
 
       }
 
       # find feature nearest to uppermost flow line of GNIS ID in each district
-      pts <- pts[sf::st_nearest_feature(sf::st_transform(max_fline, 4326), pts), ]
+      pts <- pts[
+                sf::st_nearest_feature(sf::st_transform(max_fline, 4326), pts),
+                ]
 
       # plot(dist_shp[i, ]$geometry)
       # plot(pts$geometry, add = T)
@@ -262,14 +242,16 @@ if(file.exists(annual_path)) {
         dplyr::mutate(
           district = ifelse(district < 10, paste0("0", district), district)
         )
+
       # pts <- pts[1, ]
       message("Upstream water right WDID:\n", paste0(unique(pts$wdid), sep = "\n"))
 
        calls <- lapply(1:nrow(pts), function(y) {
-         message("Pausing iteration for 3 minutes...")
+         message("Pausing iteration for 4 minutes...")
 
-         # add pause in loop as to not overwhelm CDSS resources
-         Sys.sleep(180)
+         # add pause in loop as to not overwhelm CDSS resources, DO NOT CHANGE WHEN running large number of WDIDs/districts
+         Sys.sleep(240)
+         # Sys.sleep(90)
 
          message("Iteration resuming...")
 
@@ -279,7 +261,7 @@ if(file.exists(annual_path)) {
            start_date = start_date,
            end_date   = end_date
            # start_date = "2000-01-01",
-           # end_date   = "2015-12-31"
+           # end_date   = "2005-12-31"
          )
 
          req_data
@@ -314,11 +296,11 @@ if(file.exists(annual_path)) {
        "aug_sep"  = c(8, 9)
      )
 
+     # aggregate yearly data for each window in call_windows
      avg_call_windows <- lapply(1:length(call_windows), function(z) {
 
       message("Calculating average and minimum calls for ",  names(call_windows)[z], "...")
 
-       # z = 1
         tmp <-
           calls %>%
           dplyr::filter(
@@ -374,10 +356,11 @@ if(file.exists(annual_path)) {
          avg_call_windows,
          by = c("year", "wdid")
        ) %>%
-       dplyr::relocate(district, wdid,gnis_id, water_source, approp_date,)
-     # avg_year %>%
-     #   ggplot2::ggplot() +
-     #   ggplot2::geom_line(ggplot2::aes(x = datetime, y = avg_call_year))
+       dplyr::relocate(district, wdid,gnis_id, water_source, approp_date) %>%
+       dplyr::left_join(
+         dplyr::select(pts, wdid, lat, lon),
+         by = "wdid"
+         )
 
      # subset reference table
      sites_df <-
@@ -395,11 +378,9 @@ if(file.exists(annual_path)) {
                          id_col = "snotel_id"
                          )
 
-     # fx_periods <- c("MAR-JUL", "APR-JUN", "APR-JUL", "APR-SEP", "MAY-JUL", "MAY-SEP")
-     fx_periods <- c("APR-JUL", "APR-SEP", "MAY-JUL", "MAY-SEP", "JUN-SEP")
-      # j = 1
      # forecast periods to go get
-     # fx_periods <- c("APR-JUL", "MAY-JUL")
+     fx_periods <- c("APR-JUL", "APR-SEP", "MAY-JUL", "MAY-SEP", "JUN-SEP")
+      # fx_periods <- c("APR-JUL", "MAY-JUL")
 
      fxs <- lapply(1:length(fx_periods), function(j) {
 
@@ -413,8 +394,10 @@ if(file.exists(annual_path)) {
            station_df      = sites_df,
            element_cd      = "SRVO",
            forecast_period = fx_periods[j],
-           begin_date      = "1970-01-01",
-           end_date        = "2023-01-01",
+           # begin_date      = "1970-01-01",
+           # end_date        = "2023-01-01",
+           begin_date      = start_date,
+           end_date        = end_date,
            state           = "CO",
            network         = "USGS",
            id_col          = "usgs_id"
@@ -442,12 +425,11 @@ if(file.exists(annual_path)) {
          date = as.Date(date),
          pub_month = tolower(lubridate::month(pub_date, label = T)),
          pub_year  = lubridate::year(pub_date),
+         col_name  = paste0(pub_month, "_fx_", tolower(gsub("-", "_to_", forecast_period))),
          # col_name  = paste0(tolower(gsub("-.*", "", forecast_period)), "_fx_", tolower(gsub("-", "_", forecast_period)))
-         col_name  = paste0(pub_month, "_fx_", tolower(gsub("-", "_", forecast_period)))
        ) %>%
        dplyr::filter(exceedance_prob == "50", pub_month %in% c("apr", "may")) %>%
-       dplyr::group_by(pub_date, col_name, forecast_period) %>%
-         # dplyr::group_by(col_name, forecast_period) %>%
+       dplyr::group_by(pub_date, col_name,  forecast_period) %>%
        dplyr::arrange(pub_month) %>%
        dplyr::mutate(
          exceedance_vals = sum(exceedance_vals, na.rm = T)
@@ -456,61 +438,11 @@ if(file.exists(annual_path)) {
        dplyr::ungroup() %>%
        dplyr::select(basin, district, year = pub_year, col_name, exceedance_vals) %>%
        tidyr::pivot_wider(
-         # id_cols = c(-year, -basin, -district),
          names_from  = col_name,
          values_from = exceedance_vals
        ) %>%
        dplyr::relocate(sort(names(.))) %>%
        dplyr::relocate(basin, district, year)
-
-    # fxs3$pub_date %>% unique()
-     # # get NRCS forecasts data
-     # nrcs_df <- batch_get_forecasts(
-     #   station_df      = sites_df,
-     #   # station_df      =   ref_tbl[1, ],
-     #   element_cd      = "SRVO",
-     #   forecast_period = "APR-JUL",
-     #   state           = "CO",
-     #   network         = "USGS"
-     # )
-
-     # # calculate sum across all forecasts point for the given district for each month
-     # nrcs <-
-     #   nrcs_df %>%
-     #   dplyr::mutate(
-     #     year  = as.character(lubridate::year(date)),
-     #     month = as.character(lubridate::month(date, label = T)),
-     #     year_mon = paste0(as.character(lubridate::year(date)),
-     #                       "_", as.character(lubridate::month(date, label = T)))
-     #   ) %>%
-     #   dplyr::filter(!month %in% c("Dec", "Jun")) %>%
-     #   # dplyr::group_by(basin, district, date, exceedance_prob) %>%
-     #   dplyr::group_by(basin, district, year_mon, exceedance_prob) %>%
-     #   dplyr::summarise(
-     #     exceedance_vals = sum(exceedance_vals, na.rm = T)
-     #   ) %>%
-     #   dplyr::ungroup() %>%
-     #   dplyr::filter(exceedance_prob == "50") %>%
-     #   tidyr::separate(year_mon, into = c("year", "month"), sep = "_") %>%
-     #   dplyr::select(-exceedance_prob) %>%
-     #   tidyr::complete(month, year, basin, district) %>%
-     #   dplyr::group_by(month) %>%
-     #   dplyr::mutate(
-     #     exceedance_vals = ifelse(is.na(exceedance_vals) |is.nan(exceedance_vals),
-     #                   mean(exceedance_vals, na.rm = TRUE), exceedance_vals)
-     #   ) %>%
-     #   dplyr::ungroup() %>%
-     #   tidyr::pivot_wider(
-     #     id_cols     = c(year),
-     #     names_from  = month,
-     #     values_from = exceedance_vals
-     #   ) %>%
-     #   stats::setNames(c("year", paste0(tolower(names(.)[!grepl("year", names(.))]),
-     #                                    "_exceed_val")))
-
-     # nrcs %>% stats::setNames(c("year", paste0(tolower(names(nrcs)[!grepl("year", names(nrcs))]),
-     #                                    "_exceed_val")))
-
 
      # final join of all data
      final <-
@@ -535,13 +467,51 @@ if(file.exists(annual_path)) {
          ),
          by = "year"
        ) %>%
-      tidyr::fill(basin, .direction = "updown")
+      tidyr::fill(basin, .direction = "updown") %>%
+      dplyr::relocate(lon, lat, .after = last_col())
 
-      # final %>%
+     #  final %>%
      # ggplot2::ggplot() +
-     #   ggplot2::geom_point(ggplot2::aes(x = apr_exceed_val, y = avg_call_year, color = district))
+     #   # ggplot2::geom_point(ggplot2::aes(x = apr_fx_apr_to_jul, y = avg_call_year, color = district))
+     #    ggplot2::geom_point(ggplot2::aes(x = may_swe, y = avg_call_year, color = district))
 
      final
+
+     # # OLD NRCS aggregation code.... TO DELETE
+     # nrcs_df <- batch_get_forecasts(
+     #   station_df      = sites_df,
+     #   element_cd      = "SRVO",
+     #   forecast_period = "APR-JUL",
+     #   state           = "CO",
+     #   network         = "USGS")
+
+     # # calculate sum across all forecasts point for the given district for each month
+     # nrcs <-nrcs_df %>%
+     #   dplyr::mutate(
+     #     year  = as.character(lubridate::year(date)),
+     #     month = as.character(lubridate::month(date, label = T)),
+     #     year_mon = paste0(as.character(lubridate::year(date)),"_", as.character(lubridate::month(date, label = T))) ) %>%
+     #   dplyr::filter(!month %in% c("Dec", "Jun")) %>%
+     #   # dplyr::group_by(basin, district, date, exceedance_prob) %>%
+     #   dplyr::group_by(basin, district, year_mon, exceedance_prob) %>%
+     #   dplyr::summarise( exceedance_vals = sum(exceedance_vals, na.rm = T)) %>%
+     #   dplyr::ungroup() %>%
+     #   dplyr::filter(exceedance_prob == "50") %>%
+     #   tidyr::separate(year_mon, into = c("year", "month"), sep = "_") %>%
+     #   dplyr::select(-exceedance_prob) %>%
+     #   tidyr::complete(month, year, basin, district) %>%
+     #   dplyr::group_by(month) %>%
+     #   dplyr::mutate(
+     #     exceedance_vals = ifelse(is.na(exceedance_vals) |is.nan(exceedance_vals),
+     #                   mean(exceedance_vals, na.rm = TRUE), exceedance_vals)) %>%
+     #   dplyr::ungroup() %>%
+     #   tidyr::pivot_wider(
+     #     id_cols     = c(year),
+     #     names_from  = month,
+     #     values_from = exceedance_vals
+     #   ) %>%
+     #   stats::setNames(c("year", paste0(tolower(names(.)[!grepl("year", names(.))]),"_exceed_val")))
+
 
      }, error = function(e) {
 
@@ -552,17 +522,19 @@ if(file.exists(annual_path)) {
     })
 
 
-  })
 
-  annual_data2 <-
-    annual_data %>%
+
+  }) %>%
     dplyr::bind_rows()
 
-  # sprintf("%.5s", sub_flines$gnis_id[1])
-  message(paste0("Saving data to path ---> ", annual_path))
+  message(paste0("Saving data to path\n---> ", annual_path))
 
-  # save rds
-  saveRDS(annual_data, annual_path)
+  # save csv
+  readr::write_csv(
+    annual_data,
+    annual_path
+  )
+  # saveRDS(annual_data, annual_path)
 
 }
 
