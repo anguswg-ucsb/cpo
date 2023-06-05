@@ -456,6 +456,7 @@ if(file.exists(annual_path)) {
        start_date = "1980-01-01",
        end_date   = end_date,
        name_col   = "district",
+       time_res   = "year",
        wide       = TRUE,
        verbose    = TRUE
      )

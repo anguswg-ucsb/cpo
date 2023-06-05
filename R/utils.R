@@ -68,7 +68,7 @@ get_gridmet <- function(
   # remove gridMET "category" data that is accidently returned
   gridmet <- gridmet[names(gridmet) != "category"]
 
-  message(paste0("Aggregating by week..."))
+  message(paste0("Aggregating by ", time_res, "..."))
 
   # mask and crop variables for each polygon in aoi
   gridmet <- lapply(1:length(gridmet), function(i) {
