@@ -30,6 +30,15 @@ varname <- c("pr", "tmmn", "tmmx", "pdsi", "pet",
              "spei14d", "spei30d", "spei90d", "spei1y",
              "eddi14d", "eddi30d", "eddi90d", "eddi1y", "z")
 
+# climate variables to get
+varname <- c("pr", "tmmn", "tmmx", "pdsi", "pet",
+             "spi14d", "spi30d", "spi90d", "spi1y",
+             "spei14d", "spei30d", "spei90d", "spei1y",
+             "eddi14d", "eddi30d", "eddi90d", "eddi1y", "z")
+
+# climate variables to get
+varname <- c("eddi180d", "eddi270d", "eddi1y", "eddi2y", "eddi5y" )
+
 # read in water districts polygon
 aoi <- sf::read_sf(district_path)
 

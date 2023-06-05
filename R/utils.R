@@ -5,6 +5,7 @@
 #' @param start_date starting date string (YYYY-MM-DD ). Defaults to "1980-01-01"
 #' @param end_date date string (YYYY-MM-DD ). Defaults to yesterday.
 #' @param name_col character, name of column in SF object that that uniquely identifies each polygon. Default is "district".
+#' @param time_res character, time resolution, "week" or "year". Default is "week".
 #' @param wide logical, whether data should be return wide (column for each climate variable) or long (a column naming the variable and a column represnting the value of the variable). Default is TRUE, returns a wide dataframe
 #' @param verbose logical, should messages print or not. Default is FALSE, no messages print
 #' @return dataframe with weekly average climate variable values for each polygon in the provided aoi SF object
@@ -15,6 +16,7 @@ get_gridmet <- function(
     start_date = NULL,
     end_date   = NULL,
     name_col   = "district",
+    time_res   = "week",
     wide       = TRUE,
     verbose    = FALSE
 ) {
@@ -75,8 +77,9 @@ get_gridmet <- function(
     lapply(seq_len(nrow(aoi)), function(x) {
 
       crop_mask_raster(
-        raster  = gridmet[[i]],
-        polygon = aoi[x, ]
+        raster   = gridmet[[i]],
+        polygon  = aoi[x, ],
+        time_res = time_res
       )
     }
     ) %>%
@@ -84,8 +87,6 @@ get_gridmet <- function(
 
   }) %>%
     stats::setNames(varname)
-
-
 
   message(paste0("Calculating means..."))
 
@@ -1310,7 +1311,7 @@ process_forecasts <- function(pts_path, nrcs_path) {
 #' @export
 #'
 #' @examples
-crop_mask_raster <- function(raster, polygon) {
+crop_mask_raster <- function(raster, polygon, time_res = "week") {
 
   # CROP AND MASK RASTERS
   msk <- terra::mask(
@@ -1325,7 +1326,7 @@ crop_mask_raster <- function(raster, polygon) {
   var       <- gsub("_\\d{4}-\\d{2}-\\d{2}", "", names(raster))[1]
 
   # intervals
-  intervals <- cut(dates, breaks = "week")
+  intervals <- cut(dates, breaks = time_res)
 
   # variable units
   var_units <- terra::units(raster)
@@ -1347,6 +1348,54 @@ crop_mask_raster <- function(raster, polygon) {
   return(msk)
 }
 
+# define a function to crop and mask a single SpatRaster for a single polygon
+#' Internal function used in get_climate
+#'
+#' @param raster
+#' @param polygon
+#'
+#' @return
+#' @export
+#'
+#' @examples
+crop_mask_raster_year <- function(raster, polygon) {
+  # raster  = gridmet[[1]]
+  # polygon = aoi[1, ]
+
+  # CROP AND MASK RASTERS
+  msk <- terra::mask(
+    terra::crop(raster, polygon),
+    polygon
+  )
+
+  # dates
+  dates     <- as.Date(sub(".*_(\\d{4}-\\d{2}-\\d{2})", "\\1", names(raster)))
+
+  # variable name
+  var       <- gsub("_\\d{4}-\\d{2}-\\d{2}", "", names(raster))[1]
+
+  # intervals
+  intervals <- cut(dates, breaks = "year")
+
+  # variable units
+  var_units <- terra::units(raster)
+
+  # calculate means across time
+  msk <-
+    msk %>%
+    terra::tapp(intervals, fun = "mean")
+
+  # assign time values
+  terra::time(msk)  <- as.Date(unique(intervals))
+
+  # assign unit values
+  terra::units(msk) <- unique(var_units)
+
+  # set names
+  names(msk) <- gsub("\\.", "_", gsub("X", paste0(var, "_"), names(msk)))
+
+  return(msk)
+}
 # Define function to get call data
 get_call_data <- function(
     wdid_df,

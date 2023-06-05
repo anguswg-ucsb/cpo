@@ -14,11 +14,19 @@ library(ggpubr)
 
 # Pull in climate/call analysis data for modelling.
 # CAUTION, if climate and call analysis data is not already pulled and saved to data/ folder, then this operation can take a while as all climate data and call analysis data must be pulled and downloaded from the internet
-source("R/get_model_data.R")
+# source("R/get_model_data.R")
 source("R/plot_utils.R")
+source("R/get_everything.R")
 
 # local path to save plots to
 save_path <- "D:/cpo/plots"
+# -------------------------------
+# ---- Annual Data exploring ----
+# -------------------------------
+
+
+
+
 
 # ----------------------------
 # ---- Group by seniority ----

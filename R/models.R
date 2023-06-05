@@ -11,10 +11,19 @@ library(finetune)
 library(themis)
 
 # load data
-source("R/get_model_data.R")
+source("R/get_everything.R")
+# source("R/get_model_data.R")
 source("R/plot_utils.R")
 source("R/utils.R")
 
+# ---- Model Prep ----
+
+
+
+
+# ---- Model Prep ----
+x = 5
+options(vsc.str.max.level = 2)
 # dists <- c(
   # "01", "02", "03", "04", "05",
   # "06", "07", "08", "09", "17",

@@ -92,7 +92,7 @@ if(file.exists(annual_path)) {
 
     message(paste0("District: ", dist_shp[i, ]$DISTRICT, " - (", i, "/", nrow(dist_shp), ")"))
     message(paste0("Pulling NHDPlus network data..."))
-
+    # i = 6
     # pull GNIS ID data
     gnis <- nhdplusTools::get_nhdplus(
       AOI         = dist_shp[i, ],
@@ -443,6 +443,23 @@ if(file.exists(annual_path)) {
        ) %>%
        dplyr::relocate(sort(names(.))) %>%
        dplyr::relocate(basin, district, year)
+
+     # get EDDI data
+
+     # climate variables to get
+     varname <- c("eddi180d", "eddi270d", "eddi1y", "eddi2y", "eddi5y" )
+
+     # get climate gridMET
+     clim_ts <- get_gridmet(
+       aoi        = dist_shp[i, ],
+       varname    = varname,
+       start_date = "1980-01-01",
+       end_date   = end_date,
+       name_col   = "district",
+       wide       = TRUE,
+       verbose    = TRUE
+     )
+
 
      # final join of all data
      final <-

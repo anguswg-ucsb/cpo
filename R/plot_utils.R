@@ -342,10 +342,10 @@ make_corr_plots <- function(df, save_path) {
    #  dplyr::mutate(month = lubridate::month(date)) %>%
    #  dplyr::filter(month %in% c(6, 7, 8, 9))
 
-  df <-
-    df %>%
-    dplyr::group_by(district) %>%
-    dplyr::group_split()
+    df <-
+      df %>%
+      dplyr::group_by(district) %>%
+      dplyr::group_split()
 
   cor_lst <- lapply(1:length(df), function(i) {
 
@@ -353,12 +353,13 @@ make_corr_plots <- function(df, save_path) {
 
     message(paste0("Calculating correlations - (District ", unique(d$district), ")"))
 
-  out_cor <-
-      d %>%
-      dplyr::select(where(is.numeric)) %>%
-      cor(use =  "pairwise.complete.obs") %>%
-      round(2) %>%
-      reshape2::melt()
+    out_cor <-
+        d %>%
+        dplyr::select(where(is.numeric)) %>%
+        # dplyr::select(-lat, -lon, -year, -gnis_id) %>%
+        cor(use =  "pairwise.complete.obs") %>%
+        round(2) %>%
+        reshape2::melt()
 
     cor_plot <-
       ggplot2::ggplot(
@@ -385,7 +386,7 @@ make_corr_plots <- function(df, save_path) {
         plot.title  = ggplot2::element_text(size = 16, face = "bold", hjust = 0.5),
         axis.text.x = ggplot2::element_text(angle = -45)
       )
-
+    cor_plot
     message(paste0("Saving correlation plot vs ",
                    "\n---> ",
                    save_path, "/correlation_mat_",  unique(d$district), ".png")
