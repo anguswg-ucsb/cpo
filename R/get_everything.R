@@ -452,6 +452,7 @@ if(file.exists(annual_path)) {
      # get climate gridMET
      eddi_ts <- get_gridmet(
        aoi        = dist_shp[i, ],
+       # aoi        = dist_shp,
        varname    = varname,
        start_date = "1980-01-01",
        end_date   = end_date,
@@ -494,7 +495,9 @@ if(file.exists(annual_path)) {
         by = c("year", "district")
       ) %>%
       tidyr::fill(basin, .direction = "updown") %>%
-      dplyr::relocate(lon, lat, .after = last_col())
+      dplyr::relocate(lon, lat, .after = last_col()) %>%
+      dplyr::relocate(basin, district, year) %>%
+      dplyr::mutate(year = as.character(year))
 
      #  final %>%
      # ggplot2::ggplot() +
