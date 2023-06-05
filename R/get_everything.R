@@ -450,7 +450,7 @@ if(file.exists(annual_path)) {
      varname <- c("eddi180d", "eddi270d", "eddi1y", "eddi2y", "eddi5y" )
 
      # get climate gridMET
-     clim_ts <- get_gridmet(
+     eddi_ts <- get_gridmet(
        aoi        = dist_shp[i, ],
        varname    = varname,
        start_date = "1980-01-01",
@@ -459,8 +459,12 @@ if(file.exists(annual_path)) {
        time_res   = "year",
        wide       = TRUE,
        verbose    = TRUE
-     )
-
+     ) %>%
+       dplyr::mutate(
+         year = as.character(lubridate::year(date))
+         ) %>%
+       dplyr::select(-date) %>%
+       dplyr::relocate(district, year)
 
      # final join of all data
      final <-
@@ -485,6 +489,10 @@ if(file.exists(annual_path)) {
          ),
          by = "year"
        ) %>%
+      dplyr::left_join(
+        eddi_ts,
+        by = c("year", "district")
+      ) %>%
       tidyr::fill(basin, .direction = "updown") %>%
       dplyr::relocate(lon, lat, .after = last_col())
 
