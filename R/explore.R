@@ -20,13 +20,33 @@ source("R/get_everything.R")
 
 # local path to save plots to
 save_path <- "D:/cpo/plots"
+
 # -------------------------------
 # ---- Annual Data exploring ----
 # -------------------------------
 
 
+dplyr::select(annual_data, -year, -wdid, -gnis_id, -water_source, -approp_date, -lon, -lat)
 
+# make a list of correlation plots per district, save to specified path
+corr_plots <- make_corr_plots(
+  df        =  dplyr::select(annual_data,
+                             -year, -wdid, -gnis_id, -water_source, -approp_date, -lon, -lat),
+  save_path = save_path
+)
 
+# -------------------------------
+# ---- Annual Data exploring ----
+# -------------------------------
+# Assuming your dataframe is called 'df' and the grouping variable is 'group'
+annual_data %>%
+  # dplyr::mutate(
+  #   min_call_may_sep = scale(min_call_may_sep )
+  # ) %>%
+  ggplot2::ggplot(ggplot2::aes(x = min_call_may_sep)) +
+  ggplot2::geom_histogram(binwidth = 5) +
+  ggplot2::facet_wrap(~ district)
+annual_data$avg_call_year %>% hist(breaks = 20)
 
 # ----------------------------
 # ---- Group by seniority ----

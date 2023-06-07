@@ -13,6 +13,8 @@ library(dplyr)
 library(AOI)
 library(nhdplusTools)
 library(sf)
+library(nngeo)
+library(terra)
 
 # load in utils.R functions
 source("R/utils.R")
@@ -92,7 +94,7 @@ if(file.exists(annual_path)) {
 
     message(paste0("District: ", dist_shp[i, ]$DISTRICT, " - (", i, "/", nrow(dist_shp), ")"))
     message(paste0("Pulling NHDPlus network data..."))
-    # i = 6
+
     # pull GNIS ID data
     gnis <- nhdplusTools::get_nhdplus(
       AOI         = dist_shp[i, ],
@@ -104,8 +106,8 @@ if(file.exists(annual_path)) {
       message(paste0("Locating mainstem rivers..."))
 
       # get lowest stream levels in AOI
-      tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1]
-      # tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1:2]
+      # tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1]
+      tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1:3]
       # tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[2]
 
       # lowest hydrologic point in district
@@ -156,6 +158,7 @@ if(file.exists(annual_path)) {
       }) %>%
         dplyr::bind_rows()
 
+
       # max flow lines for each streamlevel
       max_fline <-
         um_net %>%
@@ -164,6 +167,7 @@ if(file.exists(annual_path)) {
           .predicate = st_within
           ) %>%
         dplyr::group_by(origin_comid) %>%
+        # dplyr::group_by(streamleve) %>%
         dplyr::slice_max(hydroseq)
 
       message("Mainstem rivers (", length(unique(max_fline$gnis_name)), "):\n",
@@ -219,16 +223,37 @@ if(file.exists(annual_path)) {
 
       }
 
+      # tmp <- pts[unique(unlist(nngeo::st_nn(sf::st_transform(max_fline, 4326), pts, k = 3))), ]
+      # mapview::mapview(tmp) + pts
+
+      # GET index of nearest points to each uppermost flowline
+      near_idx <- unique(
+                    unlist(lapply(1:nrow(max_fline), function(z) {
+                        sf::st_nearest_feature(sf::st_transform(max_fline[z, ], 4326), pts)
+                        })
+                      )
+                    )
+
       # find feature nearest to uppermost flow line of GNIS ID in each district
       pts <- pts[
-                sf::st_nearest_feature(sf::st_transform(max_fline, 4326), pts),
+                near_idx,
+                # sf::st_nearest_feature(sf::st_transform(max_fline, 4326), pts),
+                # unique(unlist(nngeo::st_nn(sf::st_transform(max_fline, 4326), pts, k = 3))),
                 ]
 
+      # pts2 <-
+      #   pts2 %>%
+      #   dplyr::group_by(water_source) %>%
+      #   dplyr::slice(1) %>%
+      #   dplyr::ungroup()
+
+      # mapview::mapview(pts)
       # plot(dist_shp[i, ]$geometry)
       # plot(pts$geometry, add = T)
       # plot(um_net$geometry, add = T)
       # plot(max_fline$geometry, lwd = 3, col = "red", add = T)
-      # mapview::mapview(pts) + max_fline + um_net + dist_shp[i, ]
+
+      # mapview::mapview(pts) + max_fline + um_net + dist_shp[i, ] + pts2
 
       # drop point geometry and just keep WDID info
       pts <-
@@ -250,8 +275,9 @@ if(file.exists(annual_path)) {
          message("Pausing iteration for 4 minutes...")
 
          # add pause in loop as to not overwhelm CDSS resources, DO NOT CHANGE WHEN running large number of WDIDs/districts
-         Sys.sleep(240)
-         # Sys.sleep(90)
+         # Sys.sleep(240)
+         Sys.sleep(120)
+         # Sys.sleep(30)
 
          message("Iteration resuming...")
 
@@ -444,28 +470,27 @@ if(file.exists(annual_path)) {
        dplyr::relocate(sort(names(.))) %>%
        dplyr::relocate(basin, district, year)
 
-     # get EDDI data
-
-     # climate variables to get
-     varname <- c("eddi180d", "eddi270d", "eddi1y", "eddi2y", "eddi5y" )
-
-     # get climate gridMET
-     eddi_ts <- get_gridmet(
-       aoi        = dist_shp[i, ],
-       # aoi        = dist_shp,
-       varname    = varname,
-       start_date = "1980-01-01",
-       end_date   = end_date,
-       name_col   = "district",
-       time_res   = "year",
-       wide       = TRUE,
-       verbose    = TRUE
-     ) %>%
-       dplyr::mutate(
-         year = as.character(lubridate::year(date))
-         ) %>%
-       dplyr::select(-date) %>%
-       dplyr::relocate(district, year)
+     # # get EDDI data
+     # # climate variables to get
+     # varname <- c("eddi180d", "eddi270d", "eddi1y", "eddi2y", "eddi5y" )
+     #
+     # # get climate gridMET
+     # eddi_ts <- get_gridmet(
+     #   # aoi        = dist_shp[i, ],
+     #   aoi        = dist_shp,
+     #   varname    = varname,
+     #   start_date = "1980-01-01",
+     #   end_date   = end_date,
+     #   name_col   = "district",
+     #   time_res   = "year",
+     #   wide       = TRUE,
+     #   verbose    = FALSE
+     # ) %>%
+     #   dplyr::mutate(
+     #     year = as.character(lubridate::year(date))
+     #     ) %>%
+     #   dplyr::select(-date) %>%
+     #   dplyr::relocate(district, year)
 
      # final join of all data
      final <-
@@ -490,10 +515,10 @@ if(file.exists(annual_path)) {
          ),
          by = "year"
        ) %>%
-      dplyr::left_join(
-        eddi_ts,
-        by = c("year", "district")
-      ) %>%
+      # dplyr::left_join(
+      #   eddi_ts,
+      #   by = c("year", "district")
+      # ) %>%
       tidyr::fill(basin, .direction = "updown") %>%
       dplyr::relocate(lon, lat, .after = last_col()) %>%
       dplyr::relocate(basin, district, year) %>%
@@ -555,6 +580,39 @@ if(file.exists(annual_path)) {
 
   }) %>%
     dplyr::bind_rows()
+   # get EDDI data
+
+  # climate variables to get
+  varname <- c("eddi180d", "eddi270d", "eddi1y", "eddi2y", "eddi5y" )
+
+  # get climate gridMET
+  eddi_ts <- get_gridmet(
+    # aoi        = dist_shp[i, ],
+    aoi        = dist_shp,
+    varname    = varname,
+    start_date = "1980-01-01",
+    end_date   = end_date,
+    name_col   = "district",
+    time_res   = "year",
+    wide       = TRUE,
+    verbose    = FALSE
+  ) %>%
+    dplyr::mutate(
+      year = as.character(lubridate::year(date))
+    ) %>%
+    dplyr::select(-date) %>%
+    dplyr::relocate(district, year)
+
+  annual_data <-
+    annual_data %>%
+    dplyr::left_join(
+      eddi_ts,
+      by = c("year", "district")
+    ) %>%
+    tidyr::fill(basin, .direction = "updown") %>%
+    dplyr::relocate(lon, lat, .after = last_col()) %>%
+    dplyr::relocate(basin, district, year) %>%
+    dplyr::mutate(year = as.character(year))
 
   message(paste0("Saving data to path\n---> ", annual_path))
 

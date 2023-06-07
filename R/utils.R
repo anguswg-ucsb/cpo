@@ -59,7 +59,8 @@ get_gridmet <- function(
     AOI       = aoi,
     varname   = varname,
     startDate = start_date,
-    endDate   = end_date
+    endDate   = end_date,
+    verbose   = verbose
   )
 
   # district names
