@@ -5,11 +5,7 @@
 #install.packages("cdssr")
 library(cdssr)
 library(dplyr)
-library(AOI)
-library(nhdplusTools)
-library(sf)
-library(nngeo)
-library(terra)
+library(tidyverse)
 
 # load in utils.R functions
 source("R/utils.R")
@@ -46,47 +42,47 @@ streamflow_df <- lapply(1:length(ref_tbl), function(i) {
   streamflow <- do.call(rbind, streamflow_list)
 })
 
+
+# FIGURE OUT WHY SOME DISTRICTS ARE MISSING
+
+
 ##### Data wrangling #####
 unpacked_list <- unlist(streamflow_df, recursive = FALSE)
 
 # Access individual data frames from the unpacked list. Each list is a district (d)
-df_d80 <- unpacked_list[[1]]
-df_d64 <- unpacked_list[[2]]
-df_d23 <- unpacked_list[[3]]
-df_d9 <- unpacked_list[[4]]
-df_d8 <- unpacked_list[[5]]
-df_d7 <- unpacked_list[[6]]
 
-# in the process of fixing this section
+df_all <- list2env(setNames(streamflow_df, paste0("df", 1:6)), envir = .GlobalEnv)
 
-df_agg <- bind_rows(unpacked_list, .id = "district")
+# Add a column representing the original data frame district
+df1 <- df1 %>% mutate(district = 80)
+df2 <- df2 %>% mutate(district = 64)
+df3 <- df3 %>% mutate(district = 23)
+df4 <- df4 %>% mutate(district = 9)
+df5 <- df5 %>% mutate(district = 8)
+df6 <- df6 %>% mutate(district = 7)
 
-# Manually change each element in the ids list to districts
-df_agg <- lapply(df_agg, function(d) {
-  if (d == 1) {
-    df_agg <- 80
-  } else if (d == 2) {
-    df_agg <- 64
-  } else if (id == 3) {
-    df_agg <- 23
-  } else if (d == 4) {
-    df_agg <- 8
-  } else if (d == 5) {
-    df_agg <- 8
-  } else if (d == 6) {
-    df_agg <- 7
-  } else {
-    df_agg <- d
-  }
-  return(df_agg)
-})
-
-print(df_agg)
+# Stack the data frames
+stacked_df <- bind_rows(df1, df2, df3, df4, df5, df6)
+flow_df <- select(stacked_df, -meas_type, -meas_count, -data_source, -modified)
+flow_df <- rename(flow_df, year = water_year)
 
 ################################################################################
 #Next Steps
 
 # Aggregate with call data based on usgs site IDs
+call_model_df <- read.csv("./data/annual_model_data.csv")
+
+# Grouping by year, district. Sum qaf based on certain sites in each water district
+flow_df <- flow_df %>%
+            group_by(district, year) %>%
+            summarize(total_qaf = sum(total_qaf))
+# This wrong, might be overcounting some flow at sites that are adjacent to each other... follow up with Angus here
+
+
+merged_df <- call_model_df %>%
+              left_join(flow_df, by = c("district", "year"))
+
+
 
 # Order streamflow small-->large
 
