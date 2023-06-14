@@ -25,16 +25,15 @@ ref_tbl <- ref_tbl[1:16, ]
 ##### Load in observed streamflow (cfs) from CDSSR #####
 print(seq_len(nrow(ref_tbl)))
 
-streamflow_df <- lapply(1:nrow(ref_tbl), function(d) {
+streamflow_df <- lapply(1:nrow(ref_tbl), function(d) { # for each district (row) in the table
 
   logger::log_info("Getting district {ref_tbl[d, ]$district} streamflow data...")
 
 
   ids <- sapply(tidyr::separate_rows(ref_tbl[d, ], usgs_id, sep = ", ")$usgs_id, as.character)
   #lapply over every row in reg_tbl and separate attributes in column usgs_id
-  # why is it stopping at district 7 halfway throught the dataframe?
 
-  streamflow_list <- lapply(ids, function(id) {
+  streamflow_list <- lapply(ids, function(id) { # for each id in the ids list
     if (!grepl("^0", id)) {
       id <- paste0("0", id)
     } else if (TRUE) {
@@ -54,71 +53,86 @@ streamflow_df <- lapply(1:nrow(ref_tbl), function(d) {
   streamflow_list
 })
 
-#flow_df <- bind_rows(streamflow_df)
-
+# Bind and rename/remove columns
 flow_df <- streamflow_df %>%
   bind_rows() %>%
   select(-station_num, -abbrev, -meas_type, -meas_count, -data_source, -modified) %>%
   rename(year = water_year, usgs_id = usgs_site_id)
 
-
-# reformat reference table
+# Expand the list of usgs site ids in each district into their own rows
 crosswalk <- ref_tbl %>%
-              separate_rows(usgs_id, sep = ",")
+  separate_rows(usgs_id, sep = ",") # this correctly has all districts
 
-# create empty list to add data into each time you loop through
+# Initialize an empty list to store the final dataframes
 df_list <- list()
 
-# loop through each unique district number in the flow_df df
-for (i in 1:length(unique(flow_df$district))) {
+# Loop through each unique district in flow_df
+for (i in 1:length(unique(flow_df$district))) { # for i in unique districts
+  # Filter the crosswalk based on the current district
+  condition <- crosswalk$usgs_id[crosswalk$district == unique(flow_df$district)[i]] # watch the parentheses here!
 
-  # show vector of usgs_ids that should be summed for each district
-  #create vector from usgs_id col where district column equals i in vector of unique district names
-  condition <- crosswalk$usgs_id[crosswalk$district == unique(flow_df$district)[i]]
-
-
-  # create temporary df that sums up the total_qaf col by year
+  # Filter the flow_df based on the condition
+  # Here will be some usgs_ids that appear multiple times in the crosswalk because
+  #  they are relevant for multiple districts. Because of this, we need to make sure to
+  #  filter the flow_df by both the condition vector AND the relevant district in the loop
   temp <- flow_df %>%
-    dplyr::filter(usgs_id %in% condition) %>%
-    dplyr::group_by(district, year) %>%
-    dplyr::summarise(tot_qaf = sum(total_qaf)
-    )
-  # add temporary df to the list df
-  df_list[[i]] <- temp
+    filter(usgs_id %in% condition,
+      district == unique(flow_df$district)[i]) %>%
+    group_by(district, year) %>%
+    summarise(tot_qaf = sum(total_qaf))
 
+  # Add the temporary dataframe to the list
+  df_list[[i]] <- temp
 }
 
-#bind all of the items in the list into one df
-final_df <- df_list %>% #1686 obs, years start at 1983
-  bind_rows()
+# Combine all dataframes in the list into one dataframe
+final_df <- bind_rows(df_list)
 
-
-
-# # Grouping by year, district. Sum qaf based on certain sites in each water district
-# flow_df <- flow_df %>%
-#             group_by(district, year) %>%
-#             summarize(total_qaf = sum(total_qaf))
-
-
-
-# Aggregate with call data based on usgs site IDs
-call_model_df <- read.csv("./data/annual_model_data.csv") #2322 obs, years start at 1970
-call_model_df_1983on <- subset(call_model_df, !(year >= 1970 & year <= 1982)) #1763 obs
+# something is still not right with this final df... missing districts!
 
 
 ################################################################################
-# TO FIX FROM HERE ON
+# Next, find the dry tail years.
+# From average flow data in each year by district, determine which years are DRY (i.e. the driest 50% years, get a list of years for each district that will be half the number of years in each district)
 
-# right now, call data has different WDIDs but flow data only has different usgs_ids. how to associate these two...
-# sum up wdids into each usgs_id ? clarify what wdids are.
+  # Determine the years with the bottom 50% driest streamflow for each district
+  # result <- aggregate(tot_qaf ~ district, data = final_df, FUN = function(x) {
+  #   years <- final_df$year[x <= median(x)]
+  #   paste(years, collapse = ", ")
+  # })
 
-merged_df <- call_model_df_1983on %>%
-              left_join(final_df, by = c("district","year"))
-# something's not quite right. There should be gaps in flow column for years 1970-1982 because flow data was only available for 1983 and onward...
+# Calculate the median streamflow for each district
+median_streamflow <- aggregate(tot_qaf ~ district, data = final_df, FUN = median)
+
+# Create an empty dataframe to store the results
+result_df <- data.frame(district = character(), year = I(list()), stringsAsFactors = FALSE)
+
+# Iterate over each district
+for (i in 1:nrow(median_streamflow)) {
+  # Get the current district
+  d <- median_streamflow$district[i]
+
+  # Get the median streamflow for the current district
+  med_qaf <- median_streamflow$tot_qaf[i]
+
+  # Subset the dataframe for the current district
+  district_data <- subset(final_df, district == d)
+
+  # Subset the dataframe to include only the years where streamflow is below the median
+  below_median <- subset(district_data, tot_qaf < med_qaf)
+
+  # Get the unique years below the median
+  unique_years <- unique(below_median$year)
+
+  # Append the unique years to the result dataframe
+  result_df <- rbind(result_df, data.frame(district = d, year = I(list(unique_years))))
+}
+
+write_csv(result_df, "drytailyears_bydistrict.csv")
 
 
 
 
-# Order streamflow small-->large
 
-# Slice off values above (1) top 2/3 and (2) median
+# Determine the years with the bottom tercile driest streamflow for each district
+
