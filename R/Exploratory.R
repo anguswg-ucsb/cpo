@@ -3,10 +3,10 @@
 
 library(tidyverse)
 
-output_dir <- "./R/exploratory/output/"
+#output_dir <- "./R/exploratory/output"
 
 #load summarized data of response and predictor variables
-df <- read.csv("./data/annual_model_data.csv")
+#df <- read.csv("./data/annual_model_data.csv")
 
 # Scatterplot functions
 make_out_scatter_plots <- function(df, save_path) {

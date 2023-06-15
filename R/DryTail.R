@@ -113,7 +113,7 @@ for (d in 1:length(unique(final_df$district))) {
 
 # Combine all dataframes in the list into one dataframe
 drytail_lower_half <- do.call(rbind, drytail_lower_half)
-write_csv(drytail_lower_half, "drytail_lower_half.csv")
+#write_csv(drytail_lower_half, "drytail_lower_half.csv")
 
 
 # Determine the years with the bottom tercile driest streamflow for each district
@@ -134,46 +134,86 @@ for (d in 1:length(unique(final_df$district))) {
 
 # Combine all dataframes in the list into one dataframe
 drytail_lower_tercile <- do.call(rbind, drytail_lower_tercile)
-write_csv(drytail_lower_tercile, "drytail_lower_tercile.csv")
+#write_csv(drytail_lower_tercile, "drytail_lower_tercile.csv")
 
 
 
 ###############################################################################
 # Plotting for Dry Tail Years
 ###############################################################################
-
-# Filter dry tail years for each district in annual model data and save as a new csv.
-# Then call it in as the new df to run plots from Exploratory.R
 call_model <- read.csv("./data/annual_model_data.csv")
 
-#drytail_call_model <- call_model[call_model$year %in% drytail_lower_half$year & call_model$district %in% drytail_lower_half$district, ]
+# Lower half dry years
 
+# Filter the original call_model dataframe for drytail years for dry season analysis
 # Initialize an empty list to store the filtered dataframes
 filtered_dfs <- list()
 
-# Loop through each unique value in district of call_model
-for (value1 in 1:length(unique(call_model$district))) {
-  # Loop through each unique value in district of drytail_lower_half
-  for (value2 in 1:length(unique(drytail_lower_half$district))) {
-    # Check if the values in column1 of both dataframes match
-    if (value1 == value2) {
-      # Filter call_model based on the current value of district
-      filtered_df <- call_model[call_model$district == unique(call_model$district) &
-                                  call_model$year %in% drytail_lower_half$year, ]
-      # Add the filtered dataframe to the list
-      filtered_dfs[[length(filtered_dfs) + 1]] <- filtered_df
-      # Break the inner loop to move to the next value in dataframe1
-      break
+# Loop through each unique district of call_model
+for (d1 in 1:length(unique(call_model$district))) {
+  # Check if the district exists in drytail_lower_half
+  if (unique(call_model$district)[d1] %in% unique(drytail_lower_half$district)) {
+    # Get the corresponding years for the current district in drytail_lower_half
+    drytail_years <- drytail_lower_half$year[drytail_lower_half$district == unique(call_model$district)[d1]]
+
+    # Filter call_model based on the current district and drytail years
+    filtered_df <- call_model %>%
+      filter(district == unique(call_model$district)[d1] & year %in% drytail_years)
+
+    # Check if there are any years in filtered_df that do not belong in drytail_lower_half
+    if (any(!(filtered_df$year %in% drytail_years))) {
+      # Remove the rows with years not belonging to drytail_lower_half
+      filtered_df <- filtered_df %>%
+        filter(year %in% drytail_years)
     }
+
+    # Add the filtered call_model to the list
+    filtered_dfs[[length(filtered_dfs) + 1]] <- filtered_df
   }
 }
 
 # Combine all filtered dataframes in the list into one dataframe
-result_df <- do.call(rbind, filtered_dfs)
-
-# RIGHT NOW, YEAR ORDER IS OFF, AND I THINK SOME YEARS ARE MISSING. BUT ALL DISTRICTS ARE THERE.
+call_model_drytail_lower_half <- do.call(rbind, filtered_dfs)
 
 
-#df <-
+# For lower tercile dry years
 
-#source("R/Exploratory.R")
+# Filter the original call_model dataframe for drytail years for dry season analysis
+# Initialize an empty list to store the filtered dataframes
+filtered_dfs <- list()
+
+# Loop through each unique district of call_model
+for (d1 in 1:length(unique(call_model$district))) {
+  # Check if the district exists in drytail_lower_tercile
+  if (unique(call_model$district)[d1] %in% unique(drytail_lower_tercile$district)) {
+    # Get the corresponding years for the current district in drytail_lower_half
+    drytail_years <- drytail_lower_tercile$year[drytail_lower_tercile$district == unique(call_model$district)[d1]]
+
+    # Filter call_model based on the current district and drytail years
+    filtered_df <- call_model %>%
+      filter(district == unique(call_model$district)[d1] & year %in% drytail_years)
+
+    # Check if there are any years in filtered_df that do not belong in drytail_lower_half
+    if (any(!(filtered_df$year %in% drytail_years))) {
+      # Remove the rows with years not belonging to drytail_lower_half
+      filtered_df <- filtered_df %>%
+        filter(year %in% drytail_years)
+    }
+
+    # Add the filtered call_model to the list
+    filtered_dfs[[length(filtered_dfs) + 1]] <- filtered_df
+  }
+}
+
+# Combine all filtered dataframes in the list into one dataframe
+call_model_drytail_lower_tercile <- do.call(rbind, filtered_dfs)
+
+# Run plotting
+df <- call_model_drytail_lower_half
+output_dir <- "./R/exploratory/output/drytail_lowerhalf"
+source("R/Exploratory.R")
+
+# Run separately, after previous
+df <- call_model_drytail_lower_tercile
+output_dir <- "R/exploratory/output/drytail_tercile"
+source("R/Exploratory.R")
