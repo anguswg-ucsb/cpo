@@ -141,7 +141,7 @@ drytail_lower_tercile <- do.call(rbind, drytail_lower_tercile)
 ###############################################################################
 # Plotting for Dry Tail Years
 ###############################################################################
-call_model <- read.csv("./data/annual_model_data.csv")
+call_model <- read.csv("./data/annual_model_upd_eddi.csv")
 
 # Lower half dry years
 
@@ -209,11 +209,13 @@ for (d1 in 1:length(unique(call_model$district))) {
 call_model_drytail_lower_tercile <- do.call(rbind, filtered_dfs)
 
 # Run plotting
-df <- call_model_drytail_lower_half
+df <- call_model_drytail_lower_half %>%
+  select(-c("X")) # x is just an ID that was created corresponding to each year
 output_dir <- "./R/exploratory/output/drytail_lowerhalf"
 source("R/Exploratory.R")
 
 # Run separately, after previous
-df <- call_model_drytail_lower_tercile
+df <- call_model_drytail_lower_tercile %>%
+  select(-c("X"))
 output_dir <- "R/exploratory/output/drytail_tercile"
 source("R/Exploratory.R")

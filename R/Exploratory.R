@@ -3,18 +3,29 @@
 
 library(tidyverse)
 
-#output_dir <- "./R/exploratory/output"
+# Only enable this line to read from entire dataset. Otherwise comment it out and run subdatasets for drier years through DryTail.R
+#output_dir <- "./R/exploratory/output/entire_dataset"
 
-#load summarized data of response and predictor variables
-#df <- read.csv("./data/annual_model_data.csv")
+
+# Load summarized data of response and predictor variables:
+
+# Only enable this line to read from entire dataset. Otherwise comment it out and run subdatasets for drier years through DryTail.R
+#model <- read.csv("./data/annual_model_data.csv") # for original dataset containing larger EDDI period values
+
+# Merge newer EDDI period csv with annual model dataset:
+#eddidf <- read.csv("./data/apr_may_eddi.csv")
+#df <- left_join(model, eddidf, by=c("district", "year")) %>%
+#  select(-c(eddi180d:eddi5y))
+#write.csv(df, "annual_model_upd_eddi.csv")
+
 
 # Scatterplot functions
 make_out_scatter_plots <- function(df, save_path) {
 
-  cols_to_plot_predictors <- names(df)[grepl("peak_swe|may_swe|apr_fx_apr_to_sep|may_fx_apr_to_sep|eddi180d|eddi270d|eddi1y|eddi2y|eddi5y",
+  cols_to_plot_predictors <- names(df)[grepl("peak_swe|may_swe|apr_fx_apr_to_sep|may_fx_apr_to_sep|apr_eddi14d|may_eddi14d|apr_eddi30d|may_eddi30d|apr_eddi90d|may_eddi90d|apr_eddi180d|may_eddi180d|apr_eddi270d|may_eddi270d|apr_eddi1y|may_eddi1y|apr_eddi2y|may_eddi2y|apr_eddi5y|may_eddi5y",
                              names(df))]
 
-  response_vars <- names(df)[grepl("avg_call_year|avg_call_may_sep|avg_call_june_sep|avg_call_july_sep|avg_call_aug_sep|min_call_may_sep|min_call_june_sep|min_call_july_sep|min_call_aug_sep",
+  response_vars <- names(df)[grepl("avg_call_year|avg_call_may_sep|avg_call_june_sep|avg_call_july_sep|avg_call_aug_sep",
                    names(df))]
   # grepl searches for matches of certain character pattern in a vector of character strings
 
@@ -184,11 +195,13 @@ make_corr_plot_dataset <- function(df, save_path) {
 
 
 #Run plotting functions
-make_out_scatter_plots(df, output_dir)
+#make_out_scatter_plots(df, output_dir)
 
+# Correlation plots for each district
 df_for_corr <- subset(df, select= -c(basin,wdid,gnis_id,water_source, approp_date,year, apr_fx_apr_to_jul,may_fx_apr_to_jul,may_fx_may_to_jul,may_fx_may_to_sep, lon,lat))
 make_corr_plots(df_for_corr, output_dir)
 
+# Correlation plots for entire dataset
 df_for_corr2 <- subset(df, select= -c(district,basin,wdid,gnis_id,water_source, approp_date,year, apr_fx_apr_to_jul,may_fx_apr_to_jul,may_fx_may_to_jul,may_fx_may_to_sep, lon,lat))
 make_corr_plot_dataset(df_for_corr2, output_dir)
 
