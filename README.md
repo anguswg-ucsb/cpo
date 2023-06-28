@@ -34,15 +34,63 @@ right) in each district.
 
 <br>
 
+### Area of Interest
+
+For each water district in Colorado, we collect the same set of water
+right and climate data indicators. Below is a plot showing the different
+water district boundaries in Colorado.
+
+![Colorado Water Districts colored by basin](img/districts_plot.png)
+
 ### Pick a district from district shapefile
 
-Loop through each district shape
+We loop through each one of the water districts and apply the same data
+collection process for each water district. For this example, we will
+walk through the data collection process for a single district, district
+6.
+
+``` r
+# subset to example district 6
+aoi <-
+  districts %>% 
+  dplyr::filter(district == 6) %>% 
+  dplyr::select(district, division, basin, name, geometry)
+
+aoi
+#> Simple feature collection with 1 feature and 4 fields
+#> Geometry type: POLYGON
+#> Dimension:     XY
+#> Bounding box:  xmin: -105.7008 ymin: 39.84716 xmax: -104.9851 ymax: 40.16224
+#> Geodetic CRS:  WGS 84
+#> # A tibble: 1 × 5
+#>   district division basin        name                                   geometry
+#>      <int>    <int> <chr>        <chr>                             <POLYGON [°]>
+#> 1        6        1 South Platte Boulder Creek ((-105.6478 40.05384, -105.6488 …
+```
+
+![Colorado Water district 6](img/aoi_plot.png)
 
 <br>
 
 ### Retrieve all river networks for the AOI
 
-Use `NHDPlusTools`
+Use `NHDPlusTools` First thing we do is we get NHDPlus flowlines for
+each district like so:
+
+``` r
+flowlines <- nhdplusTools::get_nhdplus(AOI = aoi)
+#> Spherical geometry (s2) switched off
+#> although coordinates are longitude/latitude, st_intersects assumes that they
+#> are planar
+#> Spherical geometry (s2) switched on
+
+nrow(flowlines)
+#> [1] 327
+```
+
+We’ve got 327 unique flowlines in district 6.
+
+![NHDPlus flowlines in AOI](img/fline_plot.png)
 
 <br>
 

@@ -2,7 +2,30 @@
 output: github_document
 always_allow_html: true
 ---
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  # fig.path = "man/figures/README-",
+  out.width = "100%"
+)
 
+library(sf)
+library(cdssr)
+library(nhdplusTools)
+library(dplyr)
+library(ggplot2)
+
+districts <- sf::read_sf("data/water_districts_simple.geojson")
+names(districts) <- tolower(names(districts))
+
+thm <- 
+  ggplot2::theme_bw() +
+  ggplot2::theme(
+    plot.title = ggplot2::element_text(size = 14),
+    axis.text  = ggplot2::element_text(size = 10)
+  )
+```
 # [**cpo**](https://github.com/anguswg-ucsb/cpo)
 CPO data collection, aggregation, and analysis code repository 
 
@@ -33,13 +56,125 @@ The main script in this repository is the `get_everything()` script that when ru
 
 <br>
 
+### Area of Interest
+
+For each water district in Colorado, we collect the same set of water right and climate data indicators. Below is a plot showing the different water district boundaries in Colorado. 
+
+```{r, eval = FALSE, echo = FALSE}
+# code for creating a map of all water districts in colorado 
+
+districts_plot <- 
+  districts %>% 
+  dplyr::mutate(
+    district = as.character(district),
+    basin    = as.character(basin)
+    ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = basin)) +
+  ggplot2::labs(
+    # title = "Colorado water districts by basin",
+    fill = ""
+  ) +
+  thm
+
+ggplot2::ggsave(
+  districts_plot,
+  filename = "img/districts_plot.png",
+  width    = 12,
+  height   = 8,
+  scale    = 1
+  )
+
+```
+
+![Colorado Water Districts colored by basin](img/districts_plot.png)
+
 ### Pick a district from district shapefile
-Loop through each district shape
+
+We loop through each one of the water districts and apply the same data collection process for each water district. 
+For this example, we will walk through the data collection process for a single district, district 6. 
+```{r, eval = TRUE, echo = TRUE}
+# subset to example district 6
+aoi <-
+  districts %>% 
+  dplyr::filter(district == 6) %>% 
+  dplyr::select(district, division, basin, name, geometry)
+
+aoi
+```
+
+
+```{r, eval = FALSE, echo = FALSE}
+# code for creating a map of all water districts in colorado 
+aoi_plot <- 
+  districts %>% 
+  dplyr::mutate(
+    district = paste0("District ", as.character(district)),
+    basin    = as.character(basin)
+    ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = district)) +
+  gghighlight::gghighlight(district == "District 6") +
+  ggplot2::labs(
+    # title = "Colorado water districts by basin",
+    fill = ""
+  ) +
+  thm
+# aoi_plot
+ggplot2::ggsave(
+  aoi_plot,
+  filename = "img/aoi_plot.png",
+  width    = 12,
+  height   = 8,
+  scale    = 1
+  )
+
+```
+
+![Colorado Water district 6](img/aoi_plot.png)
 
 <br>
 
 ### Retrieve all river networks for the AOI
 Use `NHDPlusTools`
+First thing we do is we get NHDPlus flowlines for each district like so:
+
+```{r, eval = TRUE, echo = TRUE}
+flowlines <- nhdplusTools::get_nhdplus(AOI = aoi)
+
+nrow(flowlines)
+```
+
+We've got 327 unique flowlines in district 6.
+
+```{r, eval = FALSE, echo = FALSE}
+# code for creating making an NHDPlus flowlines plot
+fline_plot <- 
+  # flowlines %>% 
+  # dplyr::mutate(
+  #   district = paste0("District ", as.character(district)),
+  #   basin    = as.character(basin)
+  #   ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  ggplot2::geom_sf(data = flowlines, color = "dodgerblue3") +
+  # gghighlight::gghighlight(district == "District 6") +
+  ggplot2::labs(
+    # title = "Colorado water districts by basin",
+    fill = ""
+  ) +
+  thm
+# fline_plot
+ggplot2::ggsave(
+  fline_plot,
+  filename = "img/fline_plot.png",
+  width    = 12,
+  height   = 8,
+  scale    = 1
+  )
+```
+
+![NHDPlus flowlines in AOI](img/fline_plot.png)
 
 <br>
 
