@@ -91,7 +91,7 @@ if(file.exists(annual_path)) {
 
   # loop over each huc4 and get mainstem of the river
   annual_data <- lapply(1:nrow(dist_shp), function(i) {
-
+    # i = 6
     message(paste0("District: ", dist_shp[i, ]$DISTRICT, " - (", i, "/", nrow(dist_shp), ")"))
     message(paste0("Pulling NHDPlus network data..."))
 
@@ -107,7 +107,8 @@ if(file.exists(annual_path)) {
 
       # get lowest stream levels in AOI
       # tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1]
-      tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1:3]
+      # tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1:3]
+      tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[1:4]
       # tops <- sort(unique(dplyr::filter(gnis, streamcalc != 0)$streamleve))[2]
 
       # lowest hydrologic point in district
@@ -276,8 +277,8 @@ if(file.exists(annual_path)) {
 
          # add pause in loop as to not overwhelm CDSS resources, DO NOT CHANGE WHEN running large number of WDIDs/districts
          # Sys.sleep(240)
-         Sys.sleep(120)
-         # Sys.sleep(30)
+         # Sys.sleep(120)
+         Sys.sleep(10)
 
          message("Iteration resuming...")
 
@@ -476,7 +477,7 @@ if(file.exists(annual_path)) {
      #
      # # get climate gridMET
      # eddi_ts <- get_gridmet(
-     #   # aoi        = dist_shp[i, ],
+       # aoi        = dist_shp[i, ],
      #   aoi        = dist_shp,
      #   varname    = varname,
      #   start_date = "1980-01-01",
@@ -580,28 +581,31 @@ if(file.exists(annual_path)) {
 
   }) %>%
     dplyr::bind_rows()
+
    # get EDDI data
 
   # climate variables to get
-  varname <- c("eddi180d", "eddi270d", "eddi1y", "eddi2y", "eddi5y" )
+  varname <- c("eddi14d",  "eddi30d",  "eddi90d", "eddi180d", "eddi270d", "eddi1y", "eddi2y", "eddi5y" )
 
-  # get climate gridMET
-  eddi_ts <- get_gridmet(
-    # aoi        = dist_shp[i, ],
-    aoi        = dist_shp,
+  # varname <-
+  #   climateR::params %>%
+  #   dplyr::filter(id == "gridmet", grepl("eddi", variable)) %>%
+  #   .$variable %>%
+  #   unique()
+
+  # make a "shp" object
+  shp <- dist_shp
+
+  # get EDDI data
+  eddi_ts <- get_eddi_years(
+    aoi        = shp,
     varname    = varname,
     start_date = "1980-01-01",
     end_date   = end_date,
     name_col   = "district",
-    time_res   = "year",
     wide       = TRUE,
     verbose    = FALSE
-  ) %>%
-    dplyr::mutate(
-      year = as.character(lubridate::year(date))
-    ) %>%
-    dplyr::select(-date) %>%
-    dplyr::relocate(district, year)
+  )
 
   annual_data <-
     annual_data %>%

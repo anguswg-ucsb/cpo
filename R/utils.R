@@ -135,6 +135,162 @@ get_gridmet <- function(
   return(tidy_gridmet)
 }
 
+#' Get a single EDDI data value for each year on April 1 and May 1
+#'
+#' @param aoi SF
+#' @param varname Charcter vector, climateR::params for a list of gridMET climate parameters to choose from
+#' @param start_date starting date string (YYYY-MM-DD ). Defaults to "1980-01-01"
+#' @param end_date date string (YYYY-MM-DD ). Defaults to yesterday.
+#' @param name_col character, name of column in SF object that that uniquely identifies each polygon. Default is "district".
+#' @param wide logical, whether data should be return wide (column for each climate variable) or long (a column naming the variable and a column represnting the value of the variable). Default is TRUE, returns a wide dataframe
+#' @param verbose logical, should messages print or not. Default is FALSE, no messages print
+#' @return dataframe with weekly average climate variable values for each polygon in the provided aoi SF object
+#' @export
+get_eddi_years <- function(
+    aoi        = NULL,
+    varname    = NULL,
+    start_date = NULL,
+    end_date   = NULL,
+    name_col   = "district",
+    wide       = TRUE,
+    verbose    = FALSE
+) {
+
+  # if start date is NULL
+  if(is.null(start_date)) {
+
+    start_date = "1980-01-01"
+
+  }
+
+  # if end date is NULL
+  if(is.null(end_date)) {
+
+    end_date = Sys.Date() - 1
+
+  }
+
+  # make name column name lowercase
+  name_col <- tolower(name_col)
+
+  # make sure AOI is in correct CRS and is a MULTIPOLYGON
+  # aoi <-
+  shp <-
+    aoi %>%
+    sf::st_transform(4326) %>%
+    sf::st_cast("MULTIPOLYGON")
+
+  # make lower case column names
+  names(shp) <- tolower(names(shp))
+
+  message(paste0(
+    "Getting gridMET data...\n",
+    "-------------------------",
+    "\nStart date: ", start_date,
+    "\nEnd date: ", end_date
+  ))
+
+  # get daily gridMET data
+  gridmet <- climateR::getGridMET(
+    AOI       = shp,
+    varname   = varname,
+    startDate = start_date,
+    endDate   = end_date,
+    verbose   = verbose
+  )
+
+  # district names
+  district_names <- paste0(shp[[name_col]])
+
+  # remove gridMET "category" data that is accidently returned
+  gridmet <- gridmet[names(gridmet) != "category"]
+
+  message(paste0("Getting April 1/May 1  EDDI values..."))
+
+  # mask and crop variables for each polygon in shp
+  eddi_rasters <- lapply(1:length(gridmet), function(i) {
+
+    # loop over all polygons and crop/mask SpatRasters
+    lapply(seq_len(nrow(shp)), function(x) {
+
+      raster_date_snapshots(
+        raster   = gridmet[[i]],
+        polygon  = shp[x, ]
+      )
+    }
+    ) %>%
+      stats::setNames(district_names)
+
+  }) %>%
+    stats::setNames(varname)
+
+  message(paste0("Calculating means..."))
+
+  tidy_gridmet <- lapply(seq_along(eddi_rasters), function(i) {
+
+    # lapply counter message
+    if(verbose) {
+      message(paste0(i, "/", length(eddi_rasters)))
+    }
+
+    lapply(seq_along(eddi_rasters[[i]]), function(x) {
+
+      eddi_rasters[[i]][[x]] %>%
+        as.data.frame(xy = F) %>%
+        dplyr::summarise(dplyr::across(dplyr::everything(), mean)) %>%
+        tidyr::pivot_longer(cols = dplyr::everything()) %>%
+        tidyr::separate(name, c("variable", "date"), sep = "_", extra = "merge") %>%
+        dplyr::mutate(
+          date      = as.Date(gsub("_", "-", date)),
+          district  = names(eddi_rasters[[i]])[x]
+          # units     = unique(terra::units(eddi_rasters[[i]][[x]]))
+        ) %>%
+        dplyr::relocate(district, date, variable, value)
+
+    }) %>%
+      dplyr::bind_rows()
+
+  }) %>%
+    dplyr::bind_rows()
+
+  # if wide is TRUE, then pivot the table wider and return that
+  if(wide) {
+
+    tidy_gridmet <-
+      tidy_gridmet %>%
+      dplyr::mutate(
+        year     = format(as.Date(date), "%Y"),
+        new_cols = paste0(
+          ifelse(format(as.Date(date), "%m") == "04", "apr", "may"),
+          "_",
+          variable
+        )
+      ) %>%
+      dplyr::select(-variable, -date) %>%
+      tidyr::pivot_wider(
+        # id_cols     = c(year, district),
+        names_from  = "new_cols",
+        values_from = "value"
+      ) %>%
+      dplyr::mutate(
+        district = dplyr::case_when(
+          as.numeric(district) < 10 ~ paste0("0", district),
+          TRUE                      ~ paste0(district)
+        )
+      )
+  } else {
+
+    tidy_gridmet <-
+      tidy_gridmet %>%
+      dplyr::mutate(
+        month    = ifelse(format(as.Date(date), "%m") == "04", "apr", "may"),
+      ) %>%
+      dplyr::relocate(district, date, month, variable, value)
+
+  }
+
+  return(tidy_gridmet)
+}
 
 go_get_snotel_data <- function(site_ids) {
 
@@ -1301,6 +1457,66 @@ process_forecasts <- function(pts_path, nrcs_path) {
 
 }
 
+# select dates closest to the start of the 'month' from a date vector
+find_month_starts <- function(dates, month = "4") {
+
+  # start date of month
+  start <- as.Date(paste0(format(dates, "%Y"), paste0("-",
+                                                      ifelse(as.numeric(month) < 10, paste0("0", month), month),
+                                                      "-01")))
+  # find date closest to start date for month
+  close <- dates[which.min(abs(dates - start))]
+
+  return(close)
+}
+
+# define a function to crop and mask a single SpatRaster for a single polygon
+#' Internal function used in get_eddi_years for extracting April 1/May 1 EDDI rasters from stack of SpatRasters
+#'
+#' @param raster
+#' @param polygon
+#'
+#' @return
+#' @export
+#'
+#' @examples
+raster_date_snapshots <- function(raster, polygon) {
+
+  # CROP AND MASK RASTERS
+  msk <- terra::mask(
+    terra::crop(raster, polygon),
+    polygon
+  )
+
+  # dates
+  dates     <- as.Date(sub(".*_(\\d{4}-\\d{2}-\\d{2})", "\\1", names(raster)))
+
+  # april/may dates
+  apr <- as.Date(dates[format(as.Date(dates), "%m") %in% c("04")])
+  may <- as.Date(dates[format(as.Date(dates), "%m") %in% c("05")])
+
+  # Filter for the closest date to April 1 for each year
+  apr_starts <- as.Date(tapply(apr, format(apr, "%Y"), function(x) {find_month_starts(x, "4")}),  origin = "1970-01-01")
+  may_starts <- as.Date(tapply(may, format(may, "%Y"), function(x) {find_month_starts(x, "5")}),  origin = "1970-01-01")
+  # dates[format(as.Date(dates), "%m") %in% c("04", "05")]
+
+  # variable name
+  var       <- gsub("_\\d{4}-\\d{2}-\\d{2}", "", names(raster))[1]
+
+  # subset layers
+  msk <- msk[[names(msk) %in% paste0(var, "_", apr_starts) | names(msk) %in% paste0(var, "_", may_starts)]]
+
+  # variable units
+  var_units <- terra::units(msk)
+
+  # set units
+  terra::units(msk) <- var_units
+
+  # set names
+  names(msk) <- gsub("\\.", "_", gsub("X", paste0(var, "_"), names(msk)))
+
+  return(msk)
+}
 
 # define a function to crop and mask a single SpatRaster for a single polygon
 #' Internal function used in get_climate
