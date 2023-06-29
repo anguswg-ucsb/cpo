@@ -98,19 +98,68 @@ We’ve got 327 unique flowlines in district 6.
 
 By stream level
 
-<br>
+We remove any divergent flowlines (streamcalc != 0) and then get a list
+of all the unique streamlevels in our AOI. Below are the unique
+streamlevels in ascending order:
 
-### Determine most upstream point of river network
+``` r
+streamlevels <- sort(unique(dplyr::filter(flowlines, streamcalc != 0)$streamleve))
+```
 
-We’ll use this point to determine which water right we want to use/get
-data for
+We then select the top 2 largest streamlevels in our AOI
+
+``` r
+streamlevels <- streamlevels[1:3]
+streamlevels
+#> [1] 4 5 6
+```
+
+We then make sure to filter out any extraneous flowlines that are
+outside the bounds of the AOI. We are then left with the top 3 most
+promiment flowlines by streamlevel in our particular district of
+interest. From each streamlevel, we then found the most downstream
+flowline on that streamlevel by using the minimum Hydroseq attribute. We
+then navigate up the river network, following the mainstem of the river
+and find the most upstream flowline along the mainstem. The most
+upstream flowline along the mainstem path of each streamlevel will end
+up being the points we will use to decide which water rights (WDIDs) we
+will select for each district. This process is illustrated in the gif
+below.
+
+![Prominent flowlines by streamlevel in AOI](gif/downstream_points.gif)
 
 <br>
 
 ### Get all water rights within AOI
 
-Purpose is to get a unique water right identifier (or multiple) for each
-district
+Now that we have identified the mainstems within our AOI, and the most
+upstream flowlines of these mainstems, we can use these upstream points
+to identify the water rights we want to select for each district. First
+we’ll get all the relevant water rights for the district, and remove any
+missing data.
+
+``` r
+# get water rights information around most upstream of mainstems
+water_rights <- cdssr::get_water_rights_netamount(
+              water_district = "6"
+              )
+#> Retrieving water rights net amounts data
+
+pts <-
+  water_rights %>%
+  dplyr::tibble() %>%
+  dplyr::mutate(
+    lon     = longitude,
+    lat     = latitude,
+    gnis_id = sub("^0+", "", gnis_id)
+  ) %>%
+  # dplyr::filter(wdid == "0604255") %>%
+  dplyr::filter(!is.na(longitude) | !is.na(latitude)) %>%
+  sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
+  sf::st_filter(aoi) 
+```
+
+![Water rights locations in AOI](img/water_rights_points.png)
 
 <br>
 
@@ -118,6 +167,13 @@ district
 
 Subset the water rights by river and determine which water right should
 be associated with each mainstems most upstream point.
+
+We then will do some fuzzy string matching to subset the water rights
+points down to the same GNIS ID of our most upstream flow line points
+(red points above). Now we only have points that match the same GNIS ID
+of our upstream points, the next step we take is to find the nearest
+neighboring water right point to each of our upstream mainstem
+flowlines.
 
 <br>
 
@@ -130,16 +186,25 @@ distance/nearest neighbor calculation
 
 ### Get CDSS call data
 
-Use `cdssr` to get water right call data for each of our selected water
-rights in our district of interest/AOI
+Now we have selected the WDIDs we will be using for our district of
+interest/AOI. We can use the`cdssr` package to get [water right call
+data](https://dwr.state.co.us/Rest/GET/Help/Api/GET-api-v2-analysisservices-callanalysisbywdid)
+for each of our selected water rights in our district of interest/AOI.
 
 <br>
 
-*MOST UPSTREAM WATER RIGHT AND PRESCRIBE THE MOST JUNIOR WATER RIGHT
-IMAGINABLE (99999.00000)*
+The CDSS REST API provides an analysis service that allows you to
+provide a WDID and an admin number and request a call analysis that
+returns a time series showing the percentage of each day that the
+specified WDID and priority was out of priority and the downstream call
+in priority.
+
+Given this information we decided to prescribe a “99999.00000” to each
+of our upstream WDIDs, such that each of these WDID water right
+locations is now representing the most junior water right possible.
+simulate the experience of an extremely junior rights holder, located as
+far upstream as possible (i.e. what it would be like if you were at the
+top of the river and you had no water rights –\> all downstream users
+get first dibs on water)
 
 <br>
-
-–\> Simulate what it would be like if you were at the top of the river
-and you had no water rights (i.e. all downstream users get first dibs on
-water)
