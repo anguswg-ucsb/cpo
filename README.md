@@ -79,10 +79,6 @@ each district like so:
 
 ``` r
 flowlines <- nhdplusTools::get_nhdplus(AOI = aoi)
-#> Spherical geometry (s2) switched off
-#> although coordinates are longitude/latitude, st_intersects assumes that they
-#> are planar
-#> Spherical geometry (s2) switched on
 
 nrow(flowlines)
 #> [1] 327
@@ -126,19 +122,6 @@ up being the points we will use to decide which water rights (WDIDs) we
 will select for each district. This process is illustrated in the gif
 below.
 
-    #> Warning: st_centroid assumes attributes are constant over geometries
-    #> All intersections performed in latitude/longitude.
-    #> Reading NHDFlowline_Network
-    #> Spherical geometry (s2) switched off
-    #> Spherical geometry (s2) switched on
-    #> Writing NHDFlowline_Network
-    #> All intersections performed in latitude/longitude.
-    #> Reading NHDFlowline_Network
-    #> Spherical geometry (s2) switched off
-    #> Spherical geometry (s2) switched on
-    #> Writing NHDFlowline_Network
-    #> Warning: st_centroid assumes attributes are constant over geometries
-
 ![Prominent flowlines by streamlevel in AOI](gif/downstream_points.gif)
 
 <br>
@@ -158,7 +141,6 @@ river.
 water_rights <- cdssr::get_water_rights_netamount(
               water_district = "6"
               )
-#> Retrieving water rights net amounts data
 
 pts <-
   water_rights %>%
@@ -243,10 +225,11 @@ pts[near_idx, ] %>%
 #> 2              6 0602105 Reservoir      SOUTH BOULDE… 180974  1976-03-17 00:00:…
 ```
 
-<br>
+<br> <br>
 
-The gif below illustrates the process of finding our most upstream WDIDs
-for our district of interest
+The gif below walks through the process described above for finding the
+most upstream WDIDs for each of our mainstem flowlines in the district
+of interest:
 
 ![Workflow for finding upstream water rights on mainstem rivers in an
 AOI](gif/find_water_rights.gif)
