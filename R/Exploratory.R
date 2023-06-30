@@ -1,5 +1,8 @@
-# Emma Golub
+################################################################################
 # Script that performs exploratory analysis on predictor and response variables
+# Emma Golub
+# Updated at: 6/30/23
+################################################################################
 
 library(tidyverse)
 
@@ -12,11 +15,22 @@ library(tidyverse)
 # Only enable this line to read from entire dataset. Otherwise comment it out and run subdatasets for drier years through DryTail.R
 #model <- read.csv("./data/annual_model_data.csv") # for original dataset containing larger EDDI period values
 
+
+# (The following can be commented out since it has already been run and saved)
 # Merge newer EDDI period csv with annual model dataset:
 #eddidf <- read.csv("./data/apr_may_eddi.csv")
 #df <- left_join(model, eddidf, by=c("district", "year")) %>%
 #  select(-c(eddi180d:eddi5y))
 #write.csv(df, "annual_model_upd_eddi.csv")
+
+
+# Tributary analysis: exploring correlations for headwater basins between mainstem (South Platte R at South Platte)
+#  apr/may forecasts and district-specific call response variables. Replaced tributary districts' fx data with
+#  South Platte R (district 1) fx data
+# Read from most recently updated model data
+
+#df <- read.csv("./data/annual_model_upd_eddi.csv")
+df <- read.csv("./data/annual_model_tributary_fx_replaced.csv")
 
 
 # Scatterplot functions
@@ -197,11 +211,16 @@ make_corr_plot_dataset <- function(df, save_path) {
 #Run plotting functions
 #make_out_scatter_plots(df, output_dir)
 
+# Output_dir for replaced tributary forecast correlations
+output_dir <- "./R/exploratory/output/all_tributary_repl"
+#output_dir <- "./R/exploratory/output/all_tributary"
+
+
 # Correlation plots for each district
-df_for_corr <- subset(df, select= -c(basin,wdid,gnis_id,water_source, approp_date,year, apr_fx_apr_to_jul,may_fx_apr_to_jul,may_fx_may_to_jul,may_fx_may_to_sep, lon,lat))
+df_for_corr <- subset(df, select= -c(X,basin,wdid,gnis_id,water_source, approp_date,year, apr_fx_apr_to_jul,may_fx_apr_to_jul,may_fx_may_to_jul,may_fx_may_to_sep, lon,lat,apr_eddi1y,may_eddi1y,apr_eddi2y,may_eddi2y,apr_eddi5y,may_eddi5y))
 make_corr_plots(df_for_corr, output_dir)
 
 # Correlation plots for entire dataset
-df_for_corr2 <- subset(df, select= -c(district,basin,wdid,gnis_id,water_source, approp_date,year, apr_fx_apr_to_jul,may_fx_apr_to_jul,may_fx_may_to_jul,may_fx_may_to_sep, lon,lat))
+df_for_corr2 <- subset(df, select= -c(X,district,basin,wdid,gnis_id,water_source, approp_date,year, apr_fx_apr_to_jul,may_fx_apr_to_jul,may_fx_may_to_jul,may_fx_may_to_sep, lon,lat,may_eddi1y,apr_eddi2y,may_eddi2y,apr_eddi5y,may_eddi5y))
 make_corr_plot_dataset(df_for_corr2, output_dir)
 
