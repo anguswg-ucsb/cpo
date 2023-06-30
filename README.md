@@ -126,6 +126,19 @@ up being the points we will use to decide which water rights (WDIDs) we
 will select for each district. This process is illustrated in the gif
 below.
 
+    #> Warning: st_centroid assumes attributes are constant over geometries
+    #> All intersections performed in latitude/longitude.
+    #> Reading NHDFlowline_Network
+    #> Spherical geometry (s2) switched off
+    #> Spherical geometry (s2) switched on
+    #> Writing NHDFlowline_Network
+    #> All intersections performed in latitude/longitude.
+    #> Reading NHDFlowline_Network
+    #> Spherical geometry (s2) switched off
+    #> Spherical geometry (s2) switched on
+    #> Writing NHDFlowline_Network
+    #> Warning: st_centroid assumes attributes are constant over geometries
+
 ![Prominent flowlines by streamlevel in AOI](gif/downstream_points.gif)
 
 <br>
@@ -136,7 +149,9 @@ Now that we have identified the mainstems within our AOI, and the most
 upstream flowlines of these mainstems, we can use these upstream points
 to identify the water rights we want to select for each district. First
 we’ll get all the relevant water rights for the district, and remove any
-missing data.
+missing data, removing data whose `water_source` is “GROUNDWATER”, and
+applying a spatial filter to just points within 500 meters of a mainstem
+river.
 
 ``` r
 # get water rights information around most upstream of mainstems
@@ -156,10 +171,85 @@ pts <-
   # dplyr::filter(wdid == "0604255") %>%
   dplyr::filter(!is.na(longitude) | !is.na(latitude)) %>%
   sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
-  sf::st_filter(aoi) 
+  sf::st_filter(aoi) %>% 
+  dplyr::filter(!grepl("GROUNDWATER", water_source)) %>% 
+  sf::st_filter(
+  sf::st_transform(
+      sf::st_buffer(
+        sf::st_union(mainstems), 500),
+      4326
+      )
+  )
+
+dplyr::select(pts, water_district, wdid, structure_type, water_source, gnis_id, appropriation_date)
+#> Simple feature collection with 802 features and 6 fields
+#> Geometry type: POINT
+#> Dimension:     XY
+#> Bounding box:  xmin: -105.6933 ymin: 39.87131 xmax: -105.0106 ymax: 40.14638
+#> Geodetic CRS:  WGS 84
+#> # A tibble: 802 × 7
+#>    water_district wdid    structure_type water_source gnis_id appropriation_date
+#>             <int> <chr>   <chr>          <chr>        <chr>   <chr>             
+#>  1              6 0600501 Ditch          BOULDER CRE… 178354  1860-10-01 00:00:…
+#>  2              6 0600501 Ditch          BOULDER CRE… 178354  1904-11-04 00:00:…
+#>  3              6 0600501 Ditch          BOULDER CRE… 178354  1922-11-29 00:00:…
+#>  4              6 0600501 Ditch          BOULDER CRE… 178354  1929-12-31 00:00:…
+#>  5              6 0600501 Ditch          BOULDER CRE… 178354  1935-11-30 00:00:…
+#>  6              6 0600502 Ditch          BOULDER CRE… 178354  1922-11-10 00:00:…
+#>  7              6 0600503 Ditch          BOULDER CRE… 178354  1922-11-10 00:00:…
+#>  8              6 0600504 Ditch          BOULDER CRE… 178354  1922-11-10 00:00:…
+#>  9              6 0600505 Ditch          BOULDER CRE… 178354  1922-11-10 00:00:…
+#> 10              6 0600506 Ditch          BOULDER CRE… 178354  1922-11-10 00:00:…
+#> # ℹ 792 more rows
+#> # ℹ 1 more variable: geometry <POINT [°]>
 ```
 
-![Water rights locations in AOI](img/water_rights_points.png)
+After subsetting our data, we have 802 unique water rights, which
+correspond to 236 unique WDID locations
+
+``` r
+length(unique(pts$wdid))
+#> [1] 236
+```
+
+<br>
+
+We then identify the indices of the points nearest to most upstream
+flowline, and thus we’ve found the most upstream WDIDs along our
+mainstem flowlines.
+
+``` r
+# GET index of nearest points to each uppermost flowline
+near_idx <- unique(
+              unlist(
+                lapply(1:nrow(upstream_fline), function(z) {
+                  
+                  sf::st_nearest_feature(
+                    sf::st_transform(upstream_fline[z, ], 4326),
+                    pts
+                    )
+                  })
+                )
+              )
+
+# WDIDs of interest
+pts[near_idx, ] %>% 
+  sf::st_drop_geometry() %>% 
+  dplyr::select(water_district, wdid, structure_type, water_source, gnis_id, appropriation_date)
+#> # A tibble: 2 × 6
+#>   water_district wdid    structure_type water_source  gnis_id appropriation_date
+#>            <int> <chr>   <chr>          <chr>         <chr>   <chr>             
+#> 1              6 0604256 Reservoir      NORTH BOULDE… 178467  1907-10-03 00:00:…
+#> 2              6 0602105 Reservoir      SOUTH BOULDE… 180974  1976-03-17 00:00:…
+```
+
+<br>
+
+The gif below illustrates the process of finding our most upstream WDIDs
+for our district of interest
+
+![Workflow for finding upstream water rights on mainstem rivers in an
+AOI](gif/find_water_rights.gif)
 
 <br>
 

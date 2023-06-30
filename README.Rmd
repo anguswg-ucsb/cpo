@@ -16,6 +16,7 @@ library(nhdplusTools)
 library(dplyr)
 library(ggplot2)
 
+source("R/utils.R")
 districts <- sf::read_sf("data/water_districts_simple.geojson")
 names(districts) <- tolower(names(districts))
 
@@ -23,7 +24,8 @@ thm <-
   ggplot2::theme_bw() +
   ggplot2::theme(
     plot.title = ggplot2::element_text(size = 14),
-    axis.text  = ggplot2::element_text(size = 10)
+    axis.text  = ggplot2::element_text(size = 10),
+    plot.caption    = ggplot2::element_text(size = 12, face="bold", hjust = 0.5)
   )
 
 group_colors <- c(
@@ -200,6 +202,56 @@ streamlevels
 
 We then make sure to filter out any extraneous flowlines that are outside the bounds of the AOI. We are then left with the top 3 most promiment flowlines by streamlevel in our particular district of interest. From each streamlevel, we then found the most downstream flowline on that streamlevel by using the minimum Hydroseq attribute. We then navigate up the river network, following the mainstem of the river and find the most upstream flowline along the mainstem. The most upstream flowline along the mainstem path of each streamlevel will end up being the points we will use to decide which water rights (WDIDs) we will select for each district. This process is illustrated in the gif below.
 
+```{r, eval = TRUE, echo = FALSE}
+downs <- 
+  flowlines %>% 
+  dplyr::filter(streamcalc != 0) %>%
+  dplyr::filter(streamleve %in% streamlevels) %>%
+  sf::st_filter(
+    aoi, .predicate = st_within
+  ) %>% 
+        # dplyr::filter(streamorde >= 2) %>%
+        dplyr::mutate(dplyr::across(c(-geometry), as.character)) %>%
+        dplyr::group_by(streamleve) %>%
+        dplyr::slice_min(hydroseq) %>% 
+  sf::st_centroid() %>% 
+  sf::st_buffer(250)
+
+net1 <- 
+  nhdplusTools::navigate_network(
+    start = as.integer(downs[1, ]$comid),
+    mode = "UM",
+    distance_km = 300
+  ) %>% 
+  dplyr::mutate(origin_comid = as.integer(downs[1, ]$comid))
+
+net2 <- 
+  nhdplusTools::navigate_network(
+    start = as.integer(downs[2, ]$comid),
+    mode = "UM",
+    distance_km = 300
+  ) %>% 
+  dplyr::mutate(origin_comid = as.integer(downs[2, ]$comid))
+
+full_net <- dplyr::bind_rows(net1, net2)
+  # net$geometry %>% plot()
+  # sl <- downs[i, ]$streamleve
+  #       main_coms <- dplyr::bind_rows(net1, net2)
+  # main_coms$comid
+
+upstream_fline <- 
+  full_net  %>% 
+  dplyr::group_by(origin_comid) %>% 
+  dplyr::slice_max(hydroseq) %>% 
+  dplyr::ungroup()
+
+max_pts <- 
+  full_net  %>% 
+  dplyr::group_by(origin_comid) %>% 
+  dplyr::slice_max(hydroseq) %>% 
+  sf::st_centroid() %>% 
+  sf::st_buffer(450)
+```
 
 ```{r, eval = FALSE, echo = FALSE}
 
@@ -323,19 +375,19 @@ ggplot2::ggsave(
     scale = 1
   )
 
-downs <- 
-  flowlines %>% 
-  dplyr::filter(streamcalc != 0) %>%
-  dplyr::filter(streamleve %in% streamlevels) %>%
-  sf::st_filter(
-    aoi, .predicate = st_within
-  ) %>% 
-        # dplyr::filter(streamorde >= 2) %>%
-        dplyr::mutate(dplyr::across(c(-geometry), as.character)) %>%
-        dplyr::group_by(streamleve) %>%
-        dplyr::slice_min(hydroseq) %>% 
-  sf::st_centroid() %>% 
-  sf::st_buffer(250)
+# downs <- 
+#   flowlines %>% 
+#   dplyr::filter(streamcalc != 0) %>%
+#   dplyr::filter(streamleve %in% streamlevels) %>%
+#   sf::st_filter(
+#     aoi, .predicate = st_within
+#   ) %>% 
+#         # dplyr::filter(streamorde >= 2) %>%
+#         dplyr::mutate(dplyr::across(c(-geometry), as.character)) %>%
+#         dplyr::group_by(streamleve) %>%
+#         dplyr::slice_min(hydroseq) %>% 
+#   sf::st_centroid() %>% 
+#   sf::st_buffer(250)
 
 ds_pts_plot <-
   flowlines %>%
@@ -377,23 +429,23 @@ ggplot2::ggsave(
 # downs
 # for (i in 1:nrow(downs)) {
 #   i = 1
-net1 <- 
-  nhdplusTools::navigate_network(
-    start = as.integer(downs[1, ]$comid),
-    mode = "UM",
-    distance_km = 300
-  ) %>% 
-  dplyr::mutate(origin_comid = as.integer(downs[1, ]$comid))
-
-net2 <- 
-  nhdplusTools::navigate_network(
-    start = as.integer(downs[2, ]$comid),
-    mode = "UM",
-    distance_km = 300
-  ) %>% 
-  dplyr::mutate(origin_comid = as.integer(downs[2, ]$comid))
-
-full_net <- dplyr::bind_rows(net1, net2)
+# net1 <- 
+#   nhdplusTools::navigate_network(
+#     start = as.integer(downs[1, ]$comid),
+#     mode = "UM",
+#     distance_km = 300
+#   ) %>% 
+#   dplyr::mutate(origin_comid = as.integer(downs[1, ]$comid))
+# 
+# net2 <- 
+#   nhdplusTools::navigate_network(
+#     start = as.integer(downs[2, ]$comid),
+#     mode = "UM",
+#     distance_km = 300
+#   ) %>% 
+#   dplyr::mutate(origin_comid = as.integer(downs[2, ]$comid))
+# 
+# full_net <- dplyr::bind_rows(net1, net2)
   # net$geometry %>% plot()
   # sl <- downs[i, ]$streamleve
   #       main_coms <- dplyr::bind_rows(net1, net2)
@@ -519,12 +571,18 @@ ggplot2::ggsave(
     scale = 1
   )
 
-max_pts <- 
-  full_net  %>% 
-  dplyr::group_by(origin_comid) %>% 
-  dplyr::slice_max(hydroseq) %>% 
-  sf::st_centroid() %>% 
-  sf::st_buffer(250)
+# upstream_fline <- 
+#   full_net  %>% 
+#   dplyr::group_by(origin_comid) %>% 
+#   dplyr::slice_max(hydroseq) %>% 
+#   dplyr::ungroup()
+# 
+# max_pts <- 
+#   full_net  %>% 
+#   dplyr::group_by(origin_comid) %>% 
+#   dplyr::slice_max(hydroseq) %>% 
+#   sf::st_centroid() %>% 
+#   sf::st_buffer(450)
 
 max_pts_plot <-
   flowlines %>%
@@ -657,8 +715,8 @@ paths <- sort(list.files("img", pattern = "_streamlevel_plot", full.names = T))
 gifski::gifski(paths,
                 gif_file = "gif/downstream_points.gif",
                 width = 2000,
-                height =1400,
-                delay = 1.5,
+                height =1600,
+                delay = 1.70,
                 loop = TRUE,
                 progress = TRUE
                 )
@@ -920,9 +978,13 @@ for (i in 1:length(streamlevels)) {
 <br>
 
 ### Get all water rights within AOI
-Now that we have identified the mainstems within our AOI, and the most upstream flowlines of these mainstems, we can use these upstream points to identify the water rights we want to select for each district. First we'll get all the relevant water rights for the district, and remove any missing data.
+Now that we have identified the mainstems within our AOI, and the most upstream flowlines of these mainstems, we can use these upstream points to identify the water rights we want to select for each district. First we'll get all the relevant water rights for the district, and remove any missing data, removing data whose `water_source` is "GROUNDWATER", and applying a spatial filter to just points within 500 meters of a mainstem river.
 
-```{r}
+```{r,eval = TRUE, echo = FALSE}
+mainstems <- full_net
+```
+
+```{r, eval = TRUE, echo = TRUE}
 # get water rights information around most upstream of mainstems
 water_rights <- cdssr::get_water_rights_netamount(
               water_district = "6"
@@ -939,55 +1001,533 @@ pts <-
   # dplyr::filter(wdid == "0604255") %>%
   dplyr::filter(!is.na(longitude) | !is.na(latitude)) %>%
   sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
-  sf::st_filter(aoi) 
+  sf::st_filter(aoi) %>% 
+  dplyr::filter(!grepl("GROUNDWATER", water_source)) %>% 
+  sf::st_filter(
+  sf::st_transform(
+      sf::st_buffer(
+        sf::st_union(mainstems), 500),
+      4326
+      )
+  )
+
+dplyr::select(pts, water_district, wdid, structure_type, water_source, gnis_id, appropriation_date)
 ```
+
+After subsetting our data, we have 802 unique water rights, which correspond to 236 unique WDID locations
+```{r, eval = TRUE, echo = TRUE}
+length(unique(pts$wdid))
+```
+
+<br> 
+
+We then identify the indices of the points nearest to most upstream flowline, and thus we've found the most upstream WDIDs along our mainstem flowlines. 
+```{r, eval = TRUE, echo = TRUE}
+# GET index of nearest points to each uppermost flowline
+near_idx <- unique(
+              unlist(
+                lapply(1:nrow(upstream_fline), function(z) {
+                  
+                  sf::st_nearest_feature(
+                    sf::st_transform(upstream_fline[z, ], 4326),
+                    pts
+                    )
+                  })
+                )
+              )
+
+# WDIDs of interest
+pts[near_idx, ] %>% 
+  sf::st_drop_geometry() %>% 
+  dplyr::select(water_district, wdid, structure_type, water_source, gnis_id, appropriation_date)
+```
+
+<br>
+<br> 
+
+
+The gif below walks through the process described above for finding the most upstream WDIDs for each of our mainstem flowlines in the district of interest:
 
 ```{r, eval = FALSE, echo = FALSE}
 
-  # dplyr::mutate(  
-  #   sf::st_filter(flowlines,  aoi, .predicate = st_within),
-  #   streamleve = as.character(streamleve)
-  #   ) %>%
-  # ggplot2::ggplot() +
-  # ggplot2::geom_sf(data = aoi) +
-  # ggplot2::geom_sf(data =  dplyr::mutate(  
-  #   sf::st_filter(flowlines,  aoi, .predicate = st_within),
-  #   streamleve = as.character(streamleve)
-  #   ), ggplot2::aes(color = streamleve)) +
-  #   gghighlight::gghighlight(comid %in% "00000000000") 
-  #     # gghighlight::gghighlight(comid %in% downs$comid) +
-  # ggplot2::scale_color_manual(values=group_colors) +
-  # # gghighlight::gghighlight(streamleve %in% streamlevels) +
-  # gghighlight::gghighlight(comid %in% "00000000000") 
+sub_flines <- dplyr::mutate(  
+      sf::st_filter(flowlines,  aoi, .predicate = st_within),
+      streamleve = as.character(streamleve)
+      )
+pts1 <- 
+  water_rights %>%
+  dplyr::tibble() %>%
+  dplyr::mutate(
+    lon     = longitude,
+    lat     = latitude,
+    gnis_id = sub("^0+", "", gnis_id)
+  ) %>%   
+  dplyr::filter(!is.na(longitude) | !is.na(latitude)) %>%
+  sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326)  
 
-wr_pts_plot <-
+pts2 <- pts1 %>% sf::st_filter(aoi) 
+
+pts3 <- dplyr::filter(pts2, !grepl("GROUNDWATER", water_source))
+pts4 <- sf::st_filter(
+  pts3,
+  sf::st_transform(
+      sf::st_buffer(
+        sf::st_union(full_net), 500),
+      4326)
+  )
+# pts_match <- find_closest_matches(toupper(aoi$name),  unique(pts3$water_source))[[1]]
+# all(max_pts$gnis_id %in% pts2$gnis_id)
+# pts4 <- dplyr::filter(pts3, water_source == pts_match | gnis_id %in% max_pts$gnis_id)
+
+pts <-
+  water_rights %>%
+  dplyr::tibble() %>%
+  dplyr::mutate(
+    lon     = longitude,
+    lat     = latitude,
+    gnis_id = sub("^0+", "", gnis_id)
+  ) %>%
+  # dplyr::filter(wdid == "0604255") %>%
+  dplyr::filter(!is.na(longitude) | !is.na(latitude)) %>%
+  sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
+  sf::st_filter(aoi) %>% 
+  dplyr::filter(!grepl("GROUNDWATER", water_source)) %>% 
+  sf::st_filter(
+  sf::st_transform(
+      sf::st_buffer(
+        sf::st_union(full_net), 500),
+      4326)
+  )
+
+wr_pts_plot00 <- 
   ggplot2::ggplot() +
   ggplot2::geom_sf(data = aoi) +
   # ggplot2::geom_sf(data = pts) +
   # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
-    ggplot2::geom_sf(data =  dplyr::mutate(  
-    sf::st_filter(flowlines,  aoi, .predicate = st_within),
-    streamleve = as.character(streamleve)
-    ), ggplot2::aes(color = streamleve)) +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
     gghighlight::gghighlight(comid %in% "00000000000") +
-    ggplot2::geom_sf(data = pts) +
+    # ggplot2::geom_sf(data = pts1) +
+    # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+  ggplot2::labs(
+    # title = "Colorado water districts by basin",
+    fill = "",
+    caption = "( 1 / 12 )"
+  ) + 
+  thm
+
+ggplot2::ggsave(
+  wr_pts_plot00,
+  filename = "img/00_water_rights.png",
+  width    = 12,
+  height   = 9,
+  scale    = 1
+  )
+
+wr_pts_plot0 <- 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  # ggplot2::geom_sf(data = pts) +
+  # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+    gghighlight::gghighlight(comid %in% "00000000000") +
+    # ggplot2::geom_sf(data = pts1) +
     ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
   ggplot2::labs(
     # title = "Colorado water districts by basin",
-    fill = ""
+    fill = "",
+    caption = "( 2 / 12 )"
+  ) + 
+  thm
+
+ggplot2::ggsave(
+  wr_pts_plot0,
+  filename = "img/01_water_rights.png",
+  width    = 12,
+  height   = 9,
+  scale    = 1
+  )
+
+# wr_pts_plot1 <- 
+#   ggplot2::ggplot() +
+#   ggplot2::geom_sf(data = aoi) +
+#   # ggplot2::geom_sf(data = pts) +
+#   # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+#     ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+#     gghighlight::gghighlight(comid %in% "00000000000") +
+#       ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+#     ggplot2::geom_sf(data = pts1) +
+#     # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+#   ggplot2::labs(
+#     # title = "Colorado water districts by basin",
+#     fill = "",
+#     caption = "( 3 / 12 )"
+#   ) + 
+#   thm
+
+# ggplot2::ggsave(
+#   wr_pts_plot1,
+#   filename = "img/02_water_rights.png",
+#   width    = 12,
+#   height   = 9,
+#   scale    = 1
+#   )
+
+wr_pts_plot2 <-
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  # ggplot2::geom_sf(data = pts) +
+  # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+    gghighlight::gghighlight(comid %in% "00000000000") +
+       ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data = pts2) +
+    # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+  ggplot2::labs(
+    # title = "Colorado water districts by basin",
+    fill = "",
+    caption = "( 3 / 12 )"
   ) +
   thm
 
 # fline_plot
 ggplot2::ggsave(
-  wr_pts_plot,
-  filename = "img/water_rights_points.png",
+  wr_pts_plot2,
+  filename = "img/02_water_rights.png",
   width    = 12,
   height   = 9,
   scale    = 1
   )
+
+wr_pts_plot3 <-
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  # ggplot2::geom_sf(data = pts) +
+  # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+    gghighlight::gghighlight(comid %in% "00000000000") +
+  
+    ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data  = pts3) +
+    # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+  ggplot2::labs(
+    # title = "Colorado water districts by basin",
+    fill = "",
+    caption = "( 4 / 12 )"
+  ) +
+  thm
+
+# fline_plot
+ggplot2::ggsave(
+  wr_pts_plot3,
+  filename = "img/03_water_rights.png",
+  width    = 12,
+  height   = 9,
+  scale    = 1
+  )
+
+wr_fline_plot1 <-
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  # ggplot2::geom_sf(data = pts) +
+  # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = terminalpa)) +
+    gghighlight::gghighlight(comid %in% full_net$comid) +
+  
+    ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data  = pts3) +
+    # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+  ggplot2::labs(
+    # title = "Colorado water districts by basin",
+    fill = "",
+    caption = "( 5 / 12 )"
+  ) +
+  thm +
+  ggplot2::theme(
+    legend.position = "none"
+  )
+
+ggplot2::ggsave(
+  wr_fline_plot1,
+  filename = "img/04_water_rights.png",
+  width    = 12,
+  height   = 9,
+  scale    = 1
+  )
+
+wr_fline_plot2 <-
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  # ggplot2::geom_sf(data = pts) +
+  # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+    gghighlight::gghighlight(comid %in% "00000000000000000000") +
+    ggplot2::geom_sf(data = sf::st_transform(
+      sf::st_buffer(
+        sf::st_union(full_net), 500),
+      4326),
+        # fill = "#F8766D",
+      fill = "#619cff",
+      alpha = 0.5
+      ) + 
+    ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data  = pts3) +
+    # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::labs(
+      # title = "Colorado water districts by basin",
+      fill = "",
+      caption = "( 6 / 12 )"
+    ) +
+    thm +
+    ggplot2::theme(
+      legend.position = "none"
+    )
+
+ggplot2::ggsave(
+  wr_fline_plot2,
+  filename = "img/05_water_rights.png",
+  width    = 12,
+  height   = 9,
+  scale    = 1
+  )
+
+wr_fline_plot3 <-
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  # ggplot2::geom_sf(data = pts) +
+  # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+    gghighlight::gghighlight(comid %in% "00000000000000000000") +
+    ggplot2::geom_sf(data = sf::st_transform(
+      sf::st_buffer(
+        sf::st_union(full_net), 500),
+      4326),
+      # fill = "#F8766D",
+      fill = "#619cff",
+      alpha = 0.5
+      ) + 
+    ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data  = pts4) +
+    # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::labs(
+      fill = "",
+      caption = "( 7 / 12 )"
+    ) +
+    thm +
+    ggplot2::theme(
+      legend.position = "none"
+    )
+
+ggplot2::ggsave(
+  wr_fline_plot3,
+  filename = "img/06_water_rights.png",
+  width    = 12,
+  height   = 9,
+  scale    = 1
+  )
+
+wr_fline_plot4 <-
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  # ggplot2::geom_sf(data = pts) +
+  # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+    gghighlight::gghighlight(comid %in% "00000000000000000000") +
+    # ggplot2::geom_sf(data = sf::st_transform(
+    #   sf::st_buffer(
+    #     sf::st_union(full_net), 500),
+    #   4326),
+    #   fill = "#F8766D",
+    #   alpha = 0.7
+    #   ) + 
+    ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data  = pts4) +
+    # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::labs(
+      # title = "Colorado water districts by basin",
+      fill = "",
+      caption = "( 8 / 12 )"
+    ) +
+    thm +
+    ggplot2::theme(
+      legend.position = "none"
+    )
+
+ggplot2::ggsave(
+  wr_fline_plot4,
+  filename = "img/07_water_rights.png",
+  width    = 12,
+  height   = 9,
+  scale    = 1
+  )
+# fline_pts <- sf::st_filter(  pts3, 
+#   sf::st_transform(sf::st_buffer(full_net, 3000), 4326)
+#   )
+# wr_pts_plot3 <-
+#   ggplot2::ggplot() +
+#   ggplot2::geom_sf(data = aoi) +
+#   # ggplot2::geom_sf(data = pts) +
+#   # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+#     ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+#     gghighlight::gghighlight(comid %in% "00000000000") +
+#   
+#     ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+#     ggplot2::geom_sf(data  = pts3) +
+#     # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+#   ggplot2::labs(
+#     # title = "Colorado water districts by basin",
+#     fill = ""
+#   ) +
+#   thm
+# # fline_plot
+# ggplot2::ggsave(
+#   wr_pts_plot3,
+#   filename = "img/03_water_rights.png",
+#   width    = 12,
+#   height   = 9,
+#   scale    = 1
+#   )
+
+near1 <- sf::st_nearest_feature(
+  sf::st_transform(upstream_fline[1, ], 4326),
+  pts4
+  # pts3
+  )
+
+near2 <- sf::st_nearest_feature(
+  sf::st_transform(upstream_fline[2, ], 4326),
+  pts4
+    )
+# pts[c(near1, near2), ]
+
+final_pts <- sf::st_buffer(pts4[c(near1, near2), ], 250) 
+# pts_match <- find_closest_matches(toupper(dist_shp[i, ]$NAME),  unique(pts$water_source))
+wr_pts_plot4 <-
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  # ggplot2::geom_sf(data = pts) +
+  # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+    gghighlight::gghighlight(comid %in% "00000000000") +
+      ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data = pts4) +
+    # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+  ggplot2::geom_sf(data = final_pts[1, ], fill = "#00ba38") +
+      # ggplot2::geom_sf(data = sf::st_buffer(pts[c(near1, near2), ], 250), fill = "#00ba38") +
+  ggplot2::labs(
+    # title = "Colorado water districts by basin",
+    fill = "",
+    caption = "( 9 / 12 )"
+  ) +
+  thm
+# fline_plot
+ggplot2::ggsave(
+  wr_pts_plot4,
+  filename = "img/08_water_rights.png",
+  width    = 12,
+  height   = 9,
+  scale    = 1
+  )
+
+wr_pts_plot5 <-
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  # ggplot2::geom_sf(data = pts) +
+  # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+    gghighlight::gghighlight(comid %in% "00000000000") +
+    ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +  
+    ggplot2::geom_sf(data = pts4) +
+    ggplot2::geom_sf(data = final_pts, fill = "#00ba38") +
+      # ggplot2::geom_sf(data = sf::st_buffer(pts[c(near1, near2), ], 250), fill = "#00ba38") +
+  ggplot2::labs(
+    # title = "Colorado water districts by basin",
+    fill = "",
+    caption = "( 10 / 12 )"
+  ) +
+  thm
+
+# fline_plot
+ggplot2::ggsave(
+  wr_pts_plot5,
+  filename = "img/09_water_rights.png",
+  width    = 12,
+  height   = 9,
+  scale    = 1
+  )
+
+wr_pts_plot6 <-
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  # ggplot2::geom_sf(data = pts) +
+  # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+    gghighlight::gghighlight(comid %in% "00000000000") +
+    ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+  ggplot2::geom_sf(data = final_pts, 
+                   fill = "#00ba38"
+                   ) +
+      # ggplot2::geom_sf(data = sf::st_buffer(pts[c(near1, near2), ], 250), fill = "#00ba38") +
+  ggplot2::labs(
+    # title = "Colorado water districts by basin",
+    fill = "",
+    caption = "( 11 / 12 )"
+  ) +
+  thm
+
+# fline_plot
+ggplot2::ggsave(
+  wr_pts_plot6,
+  filename = "img/10_water_rights.png",
+  width    = 12,
+  height   = 9,
+  scale    = 1
+  )
+
+wr_pts_plot7 <-
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(data = aoi) +
+  # ggplot2::geom_sf(data = pts) +
+  # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+    ggplot2::geom_sf(data =  sub_flines, ggplot2::aes(color = streamleve)) +
+    gghighlight::gghighlight(comid %in% "00000000000") +
+    # ggplot2::geom_sf(data = sf::st_buffer(max_pts, 100), fill = "red") +
+  ggplot2::geom_sf(
+    # data = final_pts, 
+    data =  sf::st_buffer(final_pts, 200),
+                   fill = "#00ba38"
+                   ) +
+      # ggplot2::geom_sf(data = sf::st_buffer(pts[c(near1, near2), ], 250), fill = "#00ba38") +
+  ggplot2::labs(
+    # title = "Colorado water districts by basin",
+    fill = "",
+    caption = "( 12 / 12 )"
+  ) +
+  thm
+
+# fline_plot
+ggplot2::ggsave(
+  wr_pts_plot7,
+  filename = "img/11_water_rights.png",
+  width    = 12,
+  height   = 9,
+  scale    = 1
+  )
+
+# ---- MAKE WATER RIGHTS GIF ----
+# library(gifski)
+wr_pngs <- sort(list.files("img", pattern = "_water_rights", full.names = T))
+gifski::gifski(wr_pngs,
+                gif_file = "gif/find_water_rights.gif",
+                width = 2000,
+                height =1600,
+                delay = 1.70,
+                loop = TRUE,
+                progress = TRUE
+                )
 ```
-![Water rights locations in AOI](img/water_rights_points.png)
+
+![Workflow for finding upstream water rights on mainstem rivers in an AOI](gif/find_water_rights.gif)
+
 
 <br>
 
