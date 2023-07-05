@@ -255,7 +255,7 @@ if(file.exists(annual_path)) {
       # plot(max_fline$geometry, lwd = 3, col = "red", add = T)
 
       # mapview::mapview(pts) + max_fline + um_net + dist_shp[i, ] + pts2
-
+mapview::mapview(pts)
       # drop point geometry and just keep WDID info
       pts <-
         pts %>%

@@ -281,3 +281,47 @@ top of the river and you had no water rights –\> all downstream users
 get first dibs on water)
 
 <br>
+
+Here we use `cdssr` to get call analysis data for each of WDIDs of
+interest
+
+``` r
+# get call data for WDID "0604256"
+calls <- cdssr::get_call_analysis_wdid(
+  wdid       = "0604256",
+  admin_no   = "99999.00000",
+  start_date = "1970-01-01",
+  end_date   = "2023-01-01"
+)
+
+calls <- 
+  calls %>% 
+  dplyr::select(datetime,
+         wdid        = analysis_wdid,
+         priority_date,
+         out_pct     = analysis_out_of_priority_percent_of_day
+         )
+head(calls)
+#>     datetime    wdid priority_date out_pct
+#> 1 1970-01-01 0604256          <NA>       0
+#> 2 1970-01-02 0604256          <NA>       0
+#> 3 1970-01-03 0604256          <NA>       0
+#> 4 1970-01-04 0604256          <NA>       0
+#> 5 1970-01-05 0604256          <NA>       0
+#> 6 1970-01-06 0604256          <NA>       0
+```
+
+The call anaylsis by WDID tool from CDSS, allows us to gather a daily
+timeseries for each of the WDIDs we selected in each district.
+
+The percent out of priotity timeseries provides 2 key data points that
+we used for our analysis: 1. Daily out of priority percentage 2. The
+water right date of the downstream water right that calls out junior
+upstream users.
+
+For each daily timestamp, we wanted to determine the most senior right
+that would call out of super junior upstream WDID of interest for each
+mainstem in each district. For each of our WDIDs that we collected call
+out data for, we calculated an annual average call year which indicates
+for a given mainstem river and a given year, what the average water
+right call year was for that mainstem/year.
