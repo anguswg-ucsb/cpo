@@ -25,12 +25,13 @@ library(tidyverse)
 
 
 # Tributary analysis: exploring correlations for headwater basins between mainstem (South Platte R at South Platte)
-#  apr/may forecasts and district-specific call response variables. Replaced tributary districts' fx data with
-#  South Platte R (district 1) fx data
+#  apr/may forecasts and district-specific call response variables.
+#  Replaced tributary districts' fx data with South Platte R (district 1) fx data (Apr and May) from WDID 100839.
+#  Replaced tributary districts' swe data with South Platte R (district 1) basin-wide swe (peak and May)
 # Read from most recently updated model data
 
 #df <- read.csv("./data/annual_model_upd_eddi.csv")
-df <- read.csv("./data/annual_model_tributary_fx_replaced.csv")
+df <- read.csv("./data/annual_model_tributary_fx_swe_replaced.csv")
 
 
 # Scatterplot functions
