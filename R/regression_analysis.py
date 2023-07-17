@@ -1,6 +1,6 @@
 # Linear Regression Model and Output for CPO Water Right Call Analysis
 # Emma Golub
-# 7/13/23
+# Last updated: 7/17/23
 
 #######################################################################
 # Univariate Linear Regression
@@ -8,10 +8,8 @@
 
 import os
 import pandas as pd
-import statsmodels.api as sm
 import matplotlib.pyplot as plt
 import seaborn as sns
-#from sklearn import preprocessing, svm
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from sklearn.model_selection import train_test_split
@@ -30,16 +28,6 @@ df = df.drop(columns=["basin", "water_source", "gnis_id", "approp_date"])
 districts_to_exclude = [49, 65, 76]
 df = df[~df['district'].isin(districts_to_exclude)]
 # Check value types in the dataframe
-# print(df.dtypes) # they're all int64 or float64...
-
-# # Identify and remove outliers: find Q1, Q3, and interquartile range for each column
-# Q1 = df.quantile(q=.25) #BUG WORKING ON DATA TYPE ISSUE
-# Q3 = df.quantile(q=.75)
-# IQR = df.apply(stats.iqr)
-
-# # Filter to rows in dataframe that have values within 1.5*IQR of Q1 and Q3
-# df = df[~((df < (Q1-1.5*IQR)) | (df > (Q3+1.5*IQR))).any(axis=1)]
-# df.shape
 
 # Define key-value predictor-response pairings for each district
 district_variables = {
@@ -117,15 +105,14 @@ for district, (predictor_col, response_col) in district_variables.items():
     plt.figure(figsize=(6.5, 4.5), dpi=250)
     sns.regplot(x=y_pred, y=y_test, ci=None, color='darkblue')
     plt.title(f'Univariate Linear Regression Performance - District {district}', color='black')
-    plt.xlabel('Predicted Response', color='gray')
-    plt.ylabel('Actual Response', color='gray')
+    plt.xlabel(f'Predicted Response {response_col} by Predictor {predictor_col}', color='gray')
+    plt.ylabel(f'Actual Response {response_col}', color='gray')
     plt.xticks(color='gray')
     plt.yticks(color='gray')
+    
     # Show summary statistics in the plot
     plt.text(0.05, 0.9, f'R-squared: {r2:.4f}', color='black', transform=plt.gca().transAxes)
     plt.text(0.05, 0.85, f'RMSE: {rmse:.4f}', color='black', transform=plt.gca().transAxes)
-    plt.show()
-    # Save the plot
     filename = os.path.join(output_dir, f'performance_district_{district}.png')
     plt.savefig(filename, dpi=250) # why is it printing out blank
 
@@ -147,16 +134,15 @@ for district, stats in summary_statistics.items():
 
 import os
 import pandas as pd
-import statsmodels.api as sm
 import matplotlib.pyplot as plt
 import seaborn as sns
-#from sklearn import preprocessing, svm
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from sklearn.model_selection import train_test_split
-from sklearn.impute import SimpleImputer
 import numpy as np
 import scipy.stats as stats
+from statsmodels.stats.outliers_influence import OLSInfluence
+from statsmodels.regression.linear_model import OLS
 
 # Create an output directory
 output_dir = '../output/multiple_reg'
@@ -198,15 +184,62 @@ for district, (predictor_col, response_col) in district_variables.items():
     # Filter the DataFrame for the current district
     district_data = df[df['district'] == int(district)]
     
-    # Exclude rows with missing values in the predictor and response columns
-    district_data = district_data.dropna(subset=[predictor_col, response_col]) #BUG HERE REGARDING LIST FORMAT BEING UNHASHABLE
-    print(district_data)
+    # Exclude rows with NAs in the predictor and response columns - simultaneously
+    district_data = district_data.dropna(subset=[*predictor_col, response_col]) 
+    #print(district_data)
 
+    ############################################################################
+    # Z-SCORE OUTLIER APPROACH
+    # # Identify and remove outliers using Z-Score for the combined columns
+    # # Combine predictor_col and response_col for outlier detection
+    # combined_cols = predictor_col + [response_col]
+    # z_scores = np.abs(stats.zscore(district_data[combined_cols], axis=0))
+    # threshold = 5  # Try different values
+    # outlier_indices = np.any(z_scores > threshold, axis=1)
+
+    # # Filter out rows with outliers from both predictor_col and response_col
+    # predictor = district_data[predictor_col][~outlier_indices]
+    # response = district_data[response_col][~outlier_indices]
+    
+    ############################################################################
+    # COOK'S DISTANCE OUTLIER APPROACH (better for linear regression)
+    #* BUG STILL NEEDS ADJUSTMENTS... TOO MANY OUTLIERS REMOVED, SOMETHING FUNKY WITH DISTRICT 3
     # Extract the predictors and response variables
-    # Handle missing values in predictor column
-    imputer = SimpleImputer()
-    predictor = imputer.fit_transform(district_data[[predictor_col]])
+    predictor = district_data[predictor_col]
     response = district_data[response_col]
+
+    # Fit linear regression model
+    model = OLS(response, predictor)
+    results = model.fit()
+
+    # Calculate Cook's distance for each data point
+    infl = OLSInfluence(results)
+    cook_dist = infl.cooks_distance[0]
+
+    # Set a threshold for Cook's distance to identify influential points
+    threshold = 4 / predictor.shape[0]  # Try different values (4,5,6)
+
+    # Identify influential points (outliers) based on Cook's distance and the current threshold
+    outlier_indices = cook_dist > threshold
+
+    # Filter out rows with influential points from both predictor_col and response_col
+    predictor = predictor[~outlier_indices]
+    response = response[~outlier_indices]
+
+    # Check outliers removed
+    print(f"Original number of samples: {df[df['district'] == int(district)].shape[0]}")
+    print(f"Number of samples after removing outliers from predictor_col: {predictor.shape[0]}")
+    print(f"Number of samples after removing outliers from response_col: {response.shape[0]}")
+
+    if predictor.shape[0] < district_data.shape[0]:
+        print("Outliers were removed from predictor_col.")
+    else:
+        print("No outliers were removed from predictor_col.")
+        
+    if response.shape[0] < district_data.shape[0]:
+        print("Outliers were removed from response_col.")
+    else:
+        print("No outliers were removed from response_col.")
 
     # Perform multiple linear regression
     X_train, X_test, y_train, y_test = train_test_split(predictor, response, test_size = 0.25, random_state=42) # Set random_state for reproducibility
@@ -215,7 +248,7 @@ for district, (predictor_col, response_col) in district_variables.items():
     y_test = np.ravel(y_test)   
     model = LinearRegression()
     model.fit(X_train, y_train)
-    y_pred = model.predict(X_train)
+    y_pred = model.predict(X_test)
 
     # Calculate metrics
     r2 = r2_score(y_test, y_pred)
@@ -236,8 +269,8 @@ for district, (predictor_col, response_col) in district_variables.items():
     plt.figure(figsize=(6.5, 4.5), dpi=250)
     sns.regplot(x=y_pred, y=y_test, ci=None, color='darkblue')
     plt.title(f'Multiple Linear Regression Performance - District {district}', color='black')
-    plt.xlabel('Predicted Response', color='gray')
-    plt.ylabel('Actual Response', color='gray')
+    plt.xlabel(f'Predicted Response {response_col} by Predictors {predictor_col}', color='gray')
+    plt.ylabel(f'Actual Response {response_col}', color='gray')
     plt.xticks(color='gray')
     plt.yticks(color='gray')
 
@@ -246,6 +279,6 @@ for district, (predictor_col, response_col) in district_variables.items():
     plt.text(0.05, 0.85, f'RMSE: {rmse:.4f}', color='black', transform=plt.gca().transAxes)
 
     # Save the plot as a PNG file
-    #filename = os.path.join(output_dir, f'performance_district_{district}.png')
-    #plt.savefig(filename, dpi=250)
+    filename = os.path.join(output_dir, f'performance_district_{district}.png')
+    plt.savefig(filename, dpi=250)
 
