@@ -24,7 +24,7 @@ output_dir = '../regression/output/univariate_reg'
 os.makedirs(output_dir, exist_ok=True)
 
 # Read data with call years and all predictors
-df = pd.read_csv("../data/annual_model_upd_eddi.csv")
+df = pd.read_csv("../data/annual_model_v07202023.csv")
 df = df.drop(columns=["basin", "water_source", "gnis_id", "approp_date"])
 
 # Wrangle data, exclude NAs
@@ -56,8 +56,8 @@ regression_results = {}
 summary_statistics = {}
 
 ######################################################################################################
-""" # APPROACH A: REGULAR REGRESSION
-
+# APPROACH A: REGULAR REGRESSION
+"""
 # Iterate over each unique district
 for district, (predictor_col, response_col) in district_variables.items():
     # Filter the DataFrame for the current district
@@ -107,10 +107,11 @@ for district, (predictor_col, response_col) in district_variables.items():
 # Display summary statistics for each district
 for district, stats in summary_statistics.items():
     #print(f"District {district}:")
-    print(f"R-squared: {stats['R-squared']:.4f}") """
+    print(f"R-squared: {stats['R-squared']:.4f}") 
 
+"""
 ######################################################################################################
-""" # APPROACH A.1: REGULAR REGRESSION W OUTLIER REMOVAL
+# APPROACH A.1: REGULAR REGRESSION W OUTLIER REMOVAL
 
 def detect_outliers(data):
     z_scores = stats.zscore(data)
@@ -175,11 +176,11 @@ for district, (predictor_col, response_col) in district_variables.items():
 # Display summary statistics for each district
 for district, stats in summary_statistics.items():
     print(f"R-squared: {stats['R-squared']:.4f}")
- """
-""" ############################################################################################
-# APPROACH B: K-FOLDS AND SDG
+
+############################################################################################
+"""# APPROACH B: K-FOLDS AND SDG
 # Define the number of folds for cross-validation
-num_folds = 4
+num_folds = 7
 kfold = KFold(n_splits=num_folds) #Kfold object
 
 # Iterate over each unique district
@@ -266,21 +267,28 @@ for district, (predictor_col, response_col) in district_variables.items():
     print("MAE Scores:", mae_scores)
     print("Average R2:", avg_r2)
     print("Average MSE:", avg_mse)
-    print("Average MAE:", avg_mae) """
+    print("Average MAE:", avg_mae)
+
+    # Display summary statistics for each district
+for district, stats in summary_statistics.items():
+    #print(f"District {district}:")
+    print(f"Avg R-squared: {stats['Avg R-squared']:.4f}") 
+"""
 
 ############################################################################################
+""" 
 # APPROACH B.1: K-FOLDS AND SDG WITH OUTLIER REMOVAL
 
 def detect_outliers(data):
     z_scores = stats.zscore(data)
     abs_z_scores = np.abs(z_scores)
-    return np.where(abs_z_scores > 3)
+    return np.where(abs_z_scores > 4)
 
 def remove_outliers(data, outliers):
     return data[~np.isin(np.arange(len(data)), outliers)]
 
 # Define the number of folds for cross-validation
-num_folds = 7
+num_folds = 4
 kfold = KFold(n_splits=num_folds) #Kfold object
 
 # Iterate over each unique district
@@ -396,7 +404,7 @@ for district, stats in summary_statistics.items():
     #print(f"District {district}:")
     print(f"Avg R-squared: {stats['Avg R-squared']:.4f}") 
  
-
+"""
 # # Plot regression line and scatter plot to check relationships
 #     plt.figure(figsize=(6.5, 4.5), dpi=250)
 #     sns.regplot(x=predictor, y=response, ci=None, color='darkblue')
@@ -424,7 +432,7 @@ output_dir = '../regression/output/multiple_reg'
 os.makedirs(output_dir, exist_ok=True)
 
 # Read data with call years and all predictors
-df = pd.read_csv("../data/annual_model_upd_eddi.csv")
+df = pd.read_csv("../data/annual_model_v07202023.csv")
 df = df.drop(columns=["basin", "water_source", "gnis_id", "approp_date"])
 
 # Wrangle data, exclude NAs
@@ -455,15 +463,14 @@ regression_results = {}
 summary_statistics = {}
 
 #############################################################################################################
-"""
 # APPROACH A.2 NORMAL REGRESSION WITH OUTLIER REMOVAL
-def detect_outliers(data):
+""" def detect_outliers(data):
     z_scores = stats.zscore(data)
     abs_z_scores = np.abs(z_scores)
     return np.where(abs_z_scores > 3)
 
 def remove_outliers(data, outliers):
-    return data[~np.isin(np.arange(len(data)), outliers)]
+    return data[~np.isin(np.arange(len(data)), outliers)] """
 
 # Iterate over each unique district
 for district, (predictor_col, response_col) in district_variables.items():
@@ -478,7 +485,7 @@ for district, (predictor_col, response_col) in district_variables.items():
     predictor = district_data[predictor_col]
     response = district_data[response_col]
 
-    # Identify and remove outliers from the predictor and response
+"""     # Identify and remove outliers from the predictor and response
     predictor_outliers = detect_outliers(predictor)
     response_outliers = detect_outliers(response)
     outliers = np.union1d(predictor_outliers, response_outliers)
@@ -501,7 +508,7 @@ for district, (predictor_col, response_col) in district_variables.items():
         print("No outliers were removed from response_col.")
 
     # Normalize the predictor for better convergence in gradient descent
-    predictor = (predictor - np.mean(predictor)) / np.std(predictor)
+    predictor = (predictor - np.mean(predictor)) / np.std(predictor) """
 
 
     # Perform multiple linear regression
@@ -545,10 +552,10 @@ for district, stats in summary_statistics.items():
     #print(f"District {district}:")
     print(f"R-squared: {stats['R-squared']:.4f}") 
 
-"""
+
 
 #############################################################################################################
-# APPROACH B.1: K-FOLDS AND SDG 
+""" # APPROACH B.1: K-FOLDS AND SDG 
 # BUG WITH SPLITTING DATA INTO FOLDS
 
 # Define the number of folds for cross-validation
@@ -644,11 +651,11 @@ for district, (predictor_col, response_col) in district_variables.items():
     # Display summary statistics for each district
 for district, stats in summary_statistics.items():
     #print(f"District {district}:")
-    print(f"Avg R-squared: {stats['Avg R-squared']:.4f}") 
+    print(f"Avg R-squared: {stats['Avg R-squared']:.4f}")  """
 
     #############################################################################################################
 # APPROACH B.1: K-FOLDS AND SDG AND OUTLIER REMOVAL
-
+""" 
 def detect_outliers(data):
     z_scores = stats.zscore(data)
     abs_z_scores = np.abs(z_scores)
@@ -772,4 +779,4 @@ for district, (predictor_col, response_col) in district_variables.items():
     # Display summary statistics for each district
 for district, stats in summary_statistics.items():
     #print(f"District {district}:")
-    print(f"Avg R-squared: {stats['Avg R-squared']:.4f}") 
+    print(f"Avg R-squared: {stats['Avg R-squared']:.4f}")  """

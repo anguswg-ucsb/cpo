@@ -141,7 +141,9 @@ drytail_lower_tercile <- do.call(rbind, drytail_lower_tercile)
 ###############################################################################
 # Plotting for Dry Tail Years
 ###############################################################################
-call_model <- read.csv("./data/annual_model_upd_eddi.csv")
+#call_model <- read.csv("./data/annual_model_upd_eddi.csv")
+call_model <- read.csv("./data/annual_model_v07202023.csv")
+
 
 # Lower half dry years
 
@@ -174,6 +176,8 @@ for (d1 in 1:length(unique(call_model$district))) {
 
 # Combine all filtered dataframes in the list into one dataframe
 call_model_drytail_lower_half <- do.call(rbind, filtered_dfs)
+write_csv(call_model_drytail_lower_half, "call_model_drytail_lower_half.csv")
+
 
 
 # For lower tercile dry years
@@ -207,6 +211,9 @@ for (d1 in 1:length(unique(call_model$district))) {
 
 # Combine all filtered dataframes in the list into one dataframe
 call_model_drytail_lower_tercile <- do.call(rbind, filtered_dfs)
+write_csv(call_model_drytail_lower_tercile, "call_model_drytail_lower_tercile.csv")
+
+
 
 # Run plotting
 df <- call_model_drytail_lower_half %>%
