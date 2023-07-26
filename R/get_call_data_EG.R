@@ -29,6 +29,8 @@ get_call_data <- function(start_date, end_date, wdids){
   # Create a dataframe with a single column containing WDID values
   wdids_df <- data.frame(wdid = wdids)
 
+  tryCatch({
+
   data <- lapply(1:nrow(wdids_df), function(i) {
     message("Pausing iteration for 1.5 minutes...")
 
@@ -44,8 +46,12 @@ get_call_data <- function(start_date, end_date, wdids){
       end_date,
       api_key    = NULL
     )
-
     calls
+
+  }, error = function(e) {
+    NULL
+  })
+
   }) %>%
     dplyr::bind_rows()
 
