@@ -39,8 +39,6 @@ get_call_data <- function(start_date, end_date, wdids){
   # Create a dataframe with a single column containing WDID values
   wdids_df <- data.frame(wdid = wdids)
 
-  tryCatch({
-
     data <- lapply(1:nrow(wdids_df), function(i) {
       message("Pausing iteration for 1.5 minutes...")
 
@@ -49,16 +47,18 @@ get_call_data <- function(start_date, end_date, wdids){
 
       message("Iteration resuming...")
 
-      calls <- cdssr::get_call_analysis_wdid(
-        wdid = wdids_df$wdid[i],
-        admin_no   = "99999.00000",
-        start_date,
-        end_date,
-        api_key    = NULL
-      )
-      calls
+      tryCatch({
 
-    }, error = function(e) {
+        calls <- cdssr::get_call_analysis_wdid(
+          wdid = wdids_df$wdid[i],
+          admin_no   = "99999.00000",
+          start_date,
+          end_date,
+          api_key    = NULL
+        )
+        calls
+
+      }, error = function(e) {
       NULL
     })
 
