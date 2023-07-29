@@ -1,15 +1,16 @@
 ##################################################################################################
 # Water Call Analysis
-# 7/26/23
+# 7/28/23
 
 # Part 1: Function 1: Pulling data from CDSS
 # Part 2: Function 2: Cleaning data and de-trending
 # Part 3: Function 3: Linear regression Model
-# Part 4: Running the functions
+# Part 4: Initializing arguments and running the functions
 # Part 5: Plotting and visualizations
 
 # Functions are defined in the beginning of the script. Scroll to the bottom to initialize
-#  arguments, wrangle data and run the functions.
+#  arguments, wrangle data and run the functions. Make sure to run functions section first.
+#  Then run everything after Part 4 (line 235).
 #################################################################################################
 library(tidyverse)
 #library(corrplot)
@@ -162,7 +163,7 @@ water_call_analysis <- function(df_call, df_predictor){
     predictor_data$peak_swe[predictor_data$district == 5 & predictor_data$year >= 1980 & predictor_data$year <= 2022] <- univ_camp_swe$peak_swe
 
     # Up until this point, predictor_data and call_detrended_data have the same
-    overlap <- intersect(unique(predictor_data$wdid), unique(call_detrended_data$wdid))
+    #overlap <- intersect(unique(predictor_data$wdid), unique(call_detrended_data$wdid))
 
 
     # merge the two datasets together
@@ -177,7 +178,7 @@ water_call_analysis <- function(df_call, df_predictor){
     #overlap2 <- intersect(unique(predictor_data$wdid), unique(data_merge$wdid))
 
     # filter out NAs a better way
-    detrended_all_data_final <- data_merge[rowSums(!is.na(data_merge[c("may_swe", "peak_swe", "apr_fx_apr_to_sep", "may_fx_apr_to_sep", "apr_eddi90d", "may_eddi90d", "call_year_decimal")])) >= 2, ]
+    detrended_all_data_final <- data_merge[rowSums(!is.na(data_merge[c("may_swe", "peak_swe", "apr_fx_apr_to_sep", "may_fx_apr_to_sep", "apr_eddi90d", "may_eddi90d")])) >= 1, ]
     #detrended_all_data_final2 <- data_merge[complete.cases(data_merge[c("may_swe", "peak_swe", "apr_fx_apr_to_sep", "may_fx_apr_to_sep", "apr_eddi90d", "may_eddi90d", "call_year_decimal")])]
     #detrended_all_data_final3 <- na.omit(data_merge)
 
@@ -190,7 +191,6 @@ water_call_analysis <- function(df_call, df_predictor){
     write_csv(detrended_all_data_final, "data/detrended_all_data_final.csv")
 
     # Return the final cleaned, aggregated data
-    #return(out) # FIX: need it to somehow return call_detrended data too
     return(detrended_all_data_final)
 
 }
@@ -203,6 +203,9 @@ model <- function(data, distr){
   regression_performances <- data.frame(district = character(),
                           r_squared_lm1 = numeric(),
                           r_squared_lm2 = numeric(),
+                          r_squared_lm3 = numeric(),
+                          r_squared_lm4 = numeric(),
+                          r_squared_lm5 = numeric(),
                           stringsAsFactors = FALSE)
 
   for (district in distr) {
@@ -211,31 +214,41 @@ model <- function(data, distr){
 
     # Test linear regression models
     lm1 <- lm(call_year_decimal ~ may_swe, data = district_data)
-    lm2 <- lm(call_year_decimal ~ may_fx_apr_to_sep, data = district_data)
+    lm2 <- lm(call_year_decimal ~ peak_swe, data = district_data)
+    lm3 <- lm(call_year_decimal ~ may_fx_apr_to_sep, data = district_data)
+    lm4 <- lm(call_year_decimal ~ apr_fx_apr_to_sep, data = district_data)
+    lm5 <- lm(call_year_decimal ~ apr_eddi90d, data = district_data)
 
     # Get R-squared values for each model
     r_squared_lm1 <- summary(lm1)$r.squared
     r_squared_lm2 <- summary(lm2)$r.squared
+    r_squared_lm3 <- summary(lm3)$r.squared
+    r_squared_lm4 <- summary(lm4)$r.squared
+    r_squared_lm5 <- summary(lm5)$r.squared
 
     # Append results to the dataframe
     regression_performances <- rbind(regression_performances, data.frame(district = district,
                                              r_squared_lm1 = r_squared_lm1,
-                                             r_squared_lm2 = r_squared_lm2))
+                                             r_squared_lm2 = r_squared_lm2,
+                                             r_squared_lm3 = r_squared_lm3,
+                                             r_squared_lm4 = r_squared_lm4,
+                                             r_squared_lm5 = r_squared_lm5))
   }
 
   return(regression_performances)
 }
 
 
-################################################################################
-# Part 4: Running the functions and initializations
-
 add_leading_zero <- function(x) {
   ifelse(nchar(x) < 7, paste0("0", x), x)
 }
 
-# FOR SOME REASON THIS SECTION ONLY WORKS IF IT'S RUN AFTER THE FUNCTIONS SECTION
-------------------------------------
+################################################################################
+# Part 4: Initializations
+
+# ONLY RUN THIS SECTION AFTER HAVING RUN THE ABOVE FUNCTIONS SET UP FIRST
+# ------------------------------------------------------------------------------
+
 # Initializing variables for get_call_data(): --------uncomment to get call data
 
 #start_date <- "1970-01-01"
@@ -261,9 +274,10 @@ add_leading_zero <- function(x) {
 df_call_AW <- read_csv("data/cdss_call_data_AW.csv")
 df_call_EG <- read_csv("data/cdss_call_data_EG.csv")
 df_call_RB <- read_csv("data/cdss_call_data_RB.csv")
+df_call_d5_6_upd <- read_csv("data/daily_call_data_district5_6.csv")
 
 # Merge
-df_call <- dplyr::bind_rows(df_call_AW, df_call_EG, df_call_RB)
+df_call <- dplyr::bind_rows(df_call_AW, df_call_EG, df_call_RB, df_call_d5_6_upd)
 
 # Preprocess a bit (include districts, make sure leading zeros are included)
 df_call$analysis_wdid <- add_leading_zero(df_call$analysis_wdid)
@@ -293,9 +307,18 @@ df_call <- df_call %>% filter(analysis_wdid == "0100839" | analysis_wdid == "010
                                 analysis_wdid == "0301305" | analysis_wdid == "0301307" |
                                 analysis_wdid == "0302215" | analysis_wdid == "0303347" |
                                 analysis_wdid == "0400559" | analysis_wdid == "0400639" |
-                                analysis_wdid == "0500796" | analysis_wdid == "0502131" |
-                                analysis_wdid == "0504081" | analysis_wdid == "0602105" |
-                                analysis_wdid == "0604255" | analysis_wdid == "0700812" |
+
+                                #analysis_wdid == "0500796" | analysis_wdid == "0502131" |
+                                #analysis_wdid == "0504081" | analysis_wdid == "0602105" |
+                                #analysis_wdid == "0604255" |
+
+                                analysis_wdid == "0602107" | analysis_wdid == "0602108" | # these are updated Boulder Creek and St Vrain WDIDs that might provide better coverage than previous WDIDS
+                                analysis_wdid == "0602115" | analysis_wdid == "0600603" |
+                                analysis_wdid == "0502130" | analysis_wdid == "0502124" |
+                                analysis_wdid == "0502110" | analysis_wdid == "0502113" |
+                                analysis_wdid == "0500523" |
+
+                                analysis_wdid == "0700812" |
                                 analysis_wdid == "0702108" | analysis_wdid == "0703391" |
                                 analysis_wdid == "0801000" | analysis_wdid == "0801020" |
                                 analysis_wdid == "0801180" | analysis_wdid == "0901591" |
@@ -327,7 +350,7 @@ df_predictor$wdid <- add_leading_zero(df_predictor$wdid)
 result <- water_call_analysis(df_call, df_predictor)
 data_final <- result
 
-# Specify district(s) for linear regression and plotting:
+# Specify district(s) for linear regression and plotting: you can change these.
 distr <- c(1, 2, 3, 4, 5, 6, 7, 8, 9, 23, 64, 80)
 
 reg_performances <- model(data_final, distr)
@@ -339,93 +362,231 @@ reg_performances <- model(data_final, distr)
 # Loop for each district
 for (d in distr){
 
-data <- data_final[data_final$district == d,]
+  data <- data_final[data_final$district == d,]
 
-# # detrended_all_data_final_matrix <- as.matrix(detrended_all_data_final)
-# # print(detrended_all_data_final_matrix)
-# # corr_matrix <- cor(detrended_all_data_final_matrix)
-# # # full grid (has repeating values)
-# # corrplot::corrplot(corr_matrix, method=c("circle"), type=c("full"), na.or.zero = TRUE)
+  # # detrended_all_data_final_matrix <- as.matrix(detrended_all_data_final)
+  # # print(detrended_all_data_final_matrix)
+  # # corr_matrix <- cor(detrended_all_data_final_matrix)
+  # # # full grid (has repeating values)
+  # # corrplot::corrplot(corr_matrix, method=c("circle"), type=c("full"), na.or.zero = TRUE)
 
+  #-------------------------------------------------------------------------------
+  # Visualizing predictor and call data trends: grouped by WDID:
+  p1 <- ggplot(data, aes_string(x="year", y = "may_swe", group = "wdid")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line(aes(col = as.factor(wdid), linetype = as.factor(wdid))) +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("May SWE by WDID")
 
-p1 <- ggplot(data, aes_string(x="year", y = "may_swe", group = "wdid")) +
-  #stat_summary(fun.data=mean_cl_normal) +
-  geom_line(aes(col = as.factor(wdid), linetype = as.factor(wdid))) +
-  #geom_smooth(method='lm', formula= y~x) +
-  theme_bw() +
-  ggtitle("May SWE by WDID")
+  p2 <- ggplot(data, aes_string(x="year", y = "may_fx_apr_to_sep", group = "wdid")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line(aes(col = as.factor(wdid), linetype = as.factor(wdid))) +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("May NRCS Forecast by WDID")
 
-p2 <- ggplot(data, aes_string(x="year", y = "may_fx_apr_to_sep", group = "wdid")) +
-  #stat_summary(fun.data=mean_cl_normal) +
-  geom_line(aes(col = as.factor(wdid), linetype = as.factor(wdid))) +
-  #geom_smooth(method='lm', formula= y~x) +
-  theme_bw() +
-  ggtitle("May NRCS Forecast by WDID")
+  p3 <- ggplot(data, aes_string(x="year", y = "peak_swe", group = "wdid")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line(aes(col = as.factor(wdid), linetype = as.factor(wdid))) +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Peak SWE by WDID")
 
-p3 <- ggplot(data, aes_string(x="year", y = "call_year_decimal", group = "wdid")) +
-  #stat_summary(fun.data=mean_cl_normal) +
-  geom_line(aes(col = as.factor(wdid), linetype = as.factor(wdid))) +
-  #geom_smooth(method='lm', formula= y~x) +
-  theme_bw() +
-  ggtitle("Revised Summer Call Year by WDID")
+  p4 <- ggplot(data, aes_string(x="year", y = "apr_fx_apr_to_sep", group = "wdid")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line(aes(col = as.factor(wdid), linetype = as.factor(wdid))) +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("April NRCS Forecast by WDID")
 
-plot_title <- paste0("District ", paste(d), " - Regression Summary - Clean Data")
-ggsave(
-  paste0("R/regression/", plot_title, ".png"),
-  width = 14, height = 8,
-  grid.arrange(p1, p2, p3, nrow = 3,
-               top = plot_title,
-               right = "")
-)
+  p5 <- ggplot(data, aes_string(x="year", y = "apr_eddi90d", group = "wdid")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line(aes(col = as.factor(wdid), linetype = as.factor(wdid))) +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("April EDDI 90d by WDID")
 
-# Plot the May SWE Vs Summer Average Call
-p6 <- ggplot(data, aes(x = may_swe, y = call_year_decimal)) +
-  stat_summary(fun.data=mean_cl_normal) +
-  geom_point(aes(color = as.factor(wdid))) +
-  geom_smooth(method='lm', formula= y~x) +
-  theme_bw() +
-  ggtitle("Summer Average Call Year vs May SWE by WDID")
+  p6 <- ggplot(data, aes_string(x="year", y = "call_year_decimal", group = "wdid")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line(aes(col = as.factor(wdid), linetype = as.factor(wdid))) +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Revised Summer Call Year by WDID")
 
-p7 <- ggplot(data, aes(x = may_fx_apr_to_sep, y = call_year_decimal)) +
-  stat_summary(fun.data=mean_cl_normal) +
-  geom_point(aes(color = as.factor(wdid))) +
-  geom_smooth(method='lm', formula= y~x) +
-  theme_bw() +
-  ggtitle("Summer Average Call vs May NRCS Forecast by WDID")
+  plot_title <- paste0("District ", paste(d), " - Regression Summary - Clean Data by WDID")
+  ggsave(
+    paste0("R/regression/", plot_title, ".png"),
+    width = 14, height = 8,
+    grid.arrange(p1, p2, p3, p4, p5, p6, nrow = 6,
+                 top = plot_title,
+                 right = "")
+  )
 
-plot_title <- paste0("District ", paste(d), " - Regression Analysis Summary")
-ggsave(
-  paste0("R/regression/", plot_title, ".png"),
-  width = 10, height = 10,
-  grid.arrange(p6, p7, nrow = 2,
-               top = plot_title,
-               right = "")
-)
-}
+  #-------------------------------------------------------------------------------
+  # Visualizing call vs predictor performances: grouped by WDID
+  p7 <- ggplot(data, aes(x = may_swe, y = call_year_decimal)) +
+    stat_summary(fun.data=mean_cl_normal) +
+    geom_point(aes(color = as.factor(wdid))) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Summer Average Call Year vs May SWE by WDID")
 
+  p8 <- ggplot(data, aes(x = may_fx_apr_to_sep, y = call_year_decimal)) +
+    stat_summary(fun.data=mean_cl_normal) +
+    geom_point(aes(color = as.factor(wdid))) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Summer Average Call vs May NRCS Forecast by WDID")
 
-# These two plots must be outside of the loop to work:
-dist <- c(9)#1, 2, 3, 4, 5, 6, 7, 8, 9, 23, 64, 80)
-for (j in dist){
-call_detrended_data <- read_csv("data/call_detrended_data.csv")
-call_detrended_data <- call_detrended_data[call_detrended_data$district == j,]
-# Plot the Average Call Year by Year
-p4 <- ggplot(call_detrended_data, aes_string(x="year", y = "summer_call", group = "avg_condit")) +
-  #stat_summary(fun.data=mean_cl_normal) +
-  geom_line(aes(col = as.factor(avg_condit), linetype=as.factor(avg_condit))) +
-  #geom_smooth(method='lm', formula= y~x) +
-  theme_bw() +
-  ggtitle(paste0("District ", paste(j), ": 6-month Average Call by Season (final clean data)"))
-ggsave(
-  paste0("R/regression/District", paste(j), "-6-monthAverageCallbySeason-finalcleandata.png"),
-  plot = p4,
-  width = 10, height = 10
-)
+  p9 <- ggplot(data, aes(x = peak_swe, y = call_year_decimal)) +
+    stat_summary(fun.data=mean_cl_normal) +
+    geom_point(aes(color = as.factor(wdid))) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Summer Average Call vs Peak SWE by WDID")
+
+  p10 <- ggplot(data, aes(x = apr_fx_apr_to_sep, y = call_year_decimal)) +
+    stat_summary(fun.data=mean_cl_normal) +
+    geom_point(aes(color = as.factor(wdid))) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Summer Average Call vs April NRCS Forecast by WDID")
+
+  p11 <- ggplot(data, aes(x = apr_eddi90d, y = call_year_decimal)) +
+    stat_summary(fun.data=mean_cl_normal) +
+    geom_point(aes(color = as.factor(wdid))) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Summer Average Call vs April EDDI 90d by WDID")
+
+  plot_title <- paste0("District ", paste(d), " - Regression Analysis Summary by WDID")
+  ggsave(
+    paste0("R/regression/", plot_title, ".png"),
+    width = 10, height = 10,
+    grid.arrange(p7, p8, p9, p10, p11, nrow = 5,
+                 top = plot_title,
+                 right = "")
+  )
+
+  #-------------------------------------------------------------------------------
+  # Visualizing predictor and call trends: not grouped by WDID
+  p12 <- ggplot(data, aes_string(x="year", y = "may_swe")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line() +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("May SWE")
+
+  p13 <- ggplot(data, aes_string(x="year", y = "may_fx_apr_to_sep")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line() +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("May NRCS Forecast")
+
+  p14 <- ggplot(data, aes_string(x="year", y = "peak_swe")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line() +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Peak SWE")
+
+  p15 <- ggplot(data, aes_string(x="year", y = "apr_fx_apr_to_sep")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line() +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("April NRCS Forecast")
+
+  p16 <- ggplot(data, aes_string(x="year", y = "apr_eddi90d")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line() +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("April EDDI 90d")
+
+  p17 <- ggplot(data, aes_string(x="year", y = "call_year_decimal")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line() +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Revised Summer Call Year")
+
+  plot_title <- paste0("District ", paste(d), " - Regression Summary - Clean Data")
+  ggsave(
+    paste0("R/regression/", plot_title, ".png"),
+    width = 14, height = 8,
+    grid.arrange(p12, p13, p14, p15, p16, p17, nrow = 6,
+                 top = plot_title,
+                 right = "")
+  )
+
+  #-------------------------------------------------------------------------------
+  # Visualizing predictor vs call performances: not grouped by WDID
+    p18 <- ggplot(data, aes(x = may_swe, y = call_year_decimal)) +
+    stat_summary(fun.data=mean_cl_normal) +
+    geom_point() +
+    geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Summer Average Call Year vs May SWE")
+
+  p19 <- ggplot(data, aes(x = may_fx_apr_to_sep, y = call_year_decimal)) +
+    stat_summary(fun.data=mean_cl_normal) +
+    geom_point() +
+    geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Summer Average Call vs May NRCS Forecast")
+
+  p20 <- ggplot(data, aes(x = peak_swe, y = call_year_decimal)) +
+    stat_summary(fun.data=mean_cl_normal) +
+    geom_point() +
+    geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Summer Average Call vs Peak SWE")
+
+  p21 <- ggplot(data, aes(x = apr_fx_apr_to_sep, y = call_year_decimal)) +
+    stat_summary(fun.data=mean_cl_normal) +
+    geom_point() +
+    geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Summer Average Call vs April NRCS Forecast")
+
+  p22 <- ggplot(data, aes(x = apr_eddi90d, y = call_year_decimal)) +
+    stat_summary(fun.data=mean_cl_normal) +
+    geom_point() +
+    geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle("Summer Average Call vs April EDDI 90d")
+
+  plot_title <- paste0("District ", paste(d), " - Regression Analysis Summary")
+  ggsave(
+    paste0("R/regression/", plot_title, ".png"),
+    width = 10, height = 10,
+    grid.arrange(p18, p19, p20, p21, p22, nrow = 5,
+                 top = plot_title,
+                 right = "")
+  )
+
+  # Plot the Average Call Year by Year
+  call_detrended_data <- read_csv("data/call_detrended_data.csv")
+  call_detrended_data <- call_detrended_data[call_detrended_data$district == d,]
+  p23 <- ggplot(call_detrended_data, aes_string(x="year", y = "summer_call", group = "avg_condit")) +
+    #stat_summary(fun.data=mean_cl_normal) +
+    geom_line(aes(col = as.factor(avg_condit), linetype=as.factor(avg_condit))) +
+    #geom_smooth(method='lm', formula= y~x) +
+    theme_bw() +
+    ggtitle(paste0("District ", paste(d), ": 6-month Average Call by Season (final clean data)"))
+  ggsave(
+    paste0("R/regression/District", paste(d), "-6-monthAverageCallbySeason-finalcleandata.png"),
+    plot = p23,
+    width = 10, height = 10
+  )
 }
 
 # # Plot the Average Call Year by district
 # call_detrended_data_by_district <- read_csv("data/call_detrended_data_by_district.csv")
-# p5 <- ggplot(call_detrended_data_by_district, aes_string(x="year", y = "summer_call", group = "district")) +
+# p24 <- ggplot(call_detrended_data_by_district, aes_string(x="year", y = "summer_call", group = "district")) +
 #   #stat_summary(fun.data=mean_cl_normal) +
 #   geom_line(aes(col = as.factor(dist), linetype=as.factor(dist))) +
 #   #geom_smooth(method='lm', formula= y~x) +
@@ -433,6 +594,6 @@ ggsave(
 #   ggtitle(paste0("6-month Average Summer Call by District"))
 # ggsave(
 #   paste0("6-monthAverageSummerCallbydistrict-finalcleandata.png"),
-#   plot = p5,
+#   plot = p24,
 #   width = 10, height = 10
 # )
